@@ -25,6 +25,20 @@ export interface PessoaTab {
   ordem: number;
 }
 
+export interface ParticipanteLucro {
+  id: string;
+  pessoaId?: string; // Vinculação opcional com PessoaTab
+  nome: string;
+  porcentagem: number; // Porcentagem do lucro (ex: 50 para 50%)
+  descontarAdiantamentos?: boolean; // Se deve abater adiantamentos já pegos
+}
+
+export interface ConfigDivisaoLucros {
+  reservaEmergenciaPorcentagem: number; // ex: 0 a 50 (%) retido para reinvestimento/fundo de caixa
+  participantes: ParticipanteLucro[];
+  observacoes?: string;
+}
+
 export interface Acerto {
   id: string;
   titulo: string;
@@ -33,6 +47,7 @@ export interface Acerto {
   observacoes: string;
   pessoas: PessoaTab[];
   categorias: string[];
+  configDivisaoLucros?: ConfigDivisaoLucros;
   createdAt: string;
   updatedAt: string;
 }
@@ -170,4 +185,29 @@ export interface TotaisGerais {
   totalPessoas: number;
   pessoasEmDebito: number;
   pessoasEmCredito: number;
+}
+
+export interface ParticipanteLucroCalculado {
+  id: string;
+  pessoaId?: string;
+  nome: string;
+  porcentagem: number;
+  cotaBrutaCentavos: number;
+  adiantamentosAbatidosCentavos: number;
+  valorLiquidoAReceberCentavos: number;
+  status: 'a_receber' | 'zerado' | 'adiantou_mais_que_lucro';
+}
+
+export interface CalculoDivisaoLucros {
+  totalEntradasCentavos: number; // Receita Total
+  totalSaidasCentavos: number; // Despesas / Saídas totais (saídas + materiais)
+  totalCustosCentavos: number;
+  lucroBrutoCentavos: number; // Entradas - Saídas
+  reservaEmergenciaCentavos: number;
+  reservaPorcentagem: number;
+  lucroLiquidoDistribuivelCentavos: number;
+  margemLucroPercentual: number;
+  isLucroPositivo: boolean;
+  participantes: ParticipanteLucroCalculado[];
+  totalPorcentagemAlocada: number;
 }

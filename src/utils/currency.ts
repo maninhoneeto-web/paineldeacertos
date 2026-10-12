@@ -3,7 +3,10 @@
  * Garante precisão absoluta eliminando erros de arredondamento IEEE-754.
  */
 
-import { Lancamento, TotaisPessoa, TotaisGerais, PessoaTab } from '../types';
+import { 
+  Lancamento, TotaisPessoa, TotaisGerais, PessoaTab, Acerto, 
+  ParticipanteLucro, CalculoDivisaoLucros, ParticipanteLucroCalculado, ConfigDivisaoLucros 
+} from '../types';
 
 /**
  * Converte centavos inteiros para formato de moeda brasileira: R$ 1.234,56
@@ -251,3 +254,122 @@ export function calcularTotaisGerais(pessoas: PessoaTab[], lancamentos: Lancamen
     pessoasEmCredito,
   };
 }
+
+/**
+ * Calcula a Divisão de Lucros do acerto:
+ * Regra: Sempre diminuir os totais de gastos de saída (saídas + materiais) das entradas (receita bruta).
+ * O que sobra é o Lucro Líquido a ser distribuído entre os sócios / participantes conforme as cotas (%).
+ */
+export function calcularDivisaoLucros(
+  acerto: Acerto,
+  lancamentos: Lancamento[],
+  configCustom?: import('../types').ConfigDivisaoLucros
+): import('../types').CalculoDivisaoLucros {
+  const config = configCustom || acerto.configDivisaoLucros || {
+    reservaEmergenciaPorcentagem: 0,
+    participantes: [],
+  };
+
+  let totalEntradasCentavos = 0;
+  let totalSaidasDespesasCentavos = 0;
+  let totalMateriaisCentavos = 0;
+
+  for (const l of lancamentos) {
+    const valor = Math.abs(l.valorCentavos || 0);
+    if (l.tipo === 'entrada') {
+      totalEntradasCentavos += valor;
+    } else if (l.tipo === 'saida') {
+      totalSaidasDespesasCentavos += valor;
+    } else if (l.tipo === 'material') {
+      totalMateriaisCentavos += valor;
+    }
+  }
+
+  // Gastos totais de saída da obra/acerto
+  const totalSaidasCentavos = totalSaidasDespesasCentavos + totalMateriaisCentavos;
+
+  // Lucro Real = Entradas - Saídas
+  const lucroBrutoCentavos = totalEntradasCentavos - totalSaidasCentavos;
+  const isLucroPositivo = lucroBrutoCentavos > 0;
+
+  const reservaPorcentagem = config.reservaEmergenciaPorcentagem || 0;
+  const reservaEmergenciaCentavos = isLucroPositivo && reservaPorcentagem > 0
+    ? Math.round((lucroBrutoCentavos * reservaPorcentagem) / 100)
+    : 0;
+
+  const lucroLiquidoDistribuivelCentavos = isLucroPositivo
+    ? Math.max(0, lucroBrutoCentavos - reservaEmergenciaCentavos)
+    : 0;
+
+  const margemLucroPercentual = totalEntradasCentavos > 0
+    ? Number(((lucroBrutoCentavos / totalEntradasCentavos) * 100).toFixed(1))
+    : 0;
+
+  // Participantes padrão caso nenhum esteja cadastrado: pessoas do acerto
+  let participantesConfig: ParticipanteLucro[] = config.participantes || [];
+  if (participantesConfig.length === 0 && acerto.pessoas.length > 0) {
+    const cotaIgual = Number((100 / acerto.pessoas.length).toFixed(2));
+    participantesConfig = acerto.pessoas.map((p: PessoaTab) => ({
+      id: p.id,
+      pessoaId: p.id,
+      nome: p.nome,
+      porcentagem: cotaIgual,
+      descontarAdiantamentos: true,
+    }));
+  }
+
+  let totalPorcentagemAlocada = 0;
+  const participantesCalculados: ParticipanteLucroCalculado[] = participantesConfig.map((p: ParticipanteLucro) => {
+    totalPorcentagemAlocada += p.porcentagem;
+
+    const cotaBrutaCentavos = isLucroPositivo
+      ? Math.round((lucroLiquidoDistribuivelCentavos * p.porcentagem) / 100)
+      : 0;
+
+    // Calcular adiantamentos já pegos por esta pessoa se configurado
+    let adiantamentosAbatidosCentavos = 0;
+    if (p.descontarAdiantamentos !== false) {
+      const lancsPessoa = lancamentos.filter((l) => (p.pessoaId ? l.pessoaId === p.pessoaId : l.pessoaId === p.id));
+      for (const l of lancsPessoa) {
+        if (l.tipo === 'adiantamento') {
+          adiantamentosAbatidosCentavos += Math.abs(l.valorCentavos || 0);
+        }
+      }
+    }
+
+    const valorLiquidoAReceberCentavos = cotaBrutaCentavos - adiantamentosAbatidosCentavos;
+
+    let status: 'a_receber' | 'zerado' | 'adiantou_mais_que_lucro' = 'zerado';
+    if (valorLiquidoAReceberCentavos > 0) {
+      status = 'a_receber';
+    } else if (valorLiquidoAReceberCentavos < 0) {
+      status = 'adiantou_mais_que_lucro';
+    }
+
+    return {
+      id: p.id,
+      pessoaId: p.pessoaId,
+      nome: p.nome,
+      porcentagem: p.porcentagem,
+      cotaBrutaCentavos,
+      adiantamentosAbatidosCentavos,
+      valorLiquidoAReceberCentavos,
+      status,
+    };
+  });
+
+  return {
+    totalEntradasCentavos,
+    totalSaidasCentavos,
+    totalCustosCentavos: totalSaidasCentavos,
+    lucroBrutoCentavos,
+    reservaEmergenciaCentavos,
+    reservaPorcentagem,
+    lucroLiquidoDistribuivelCentavos,
+    margemLucroPercentual,
+    isLucroPositivo,
+    participantes: participantesCalculados,
+    totalPorcentagemAlocada,
+  };
+}
+

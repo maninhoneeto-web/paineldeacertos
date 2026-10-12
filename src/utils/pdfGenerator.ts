@@ -6,7 +6,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Acerto, Lancamento, ImagemComprovante, PessoaTab } from '../types';
-import { formatarCentavos, calcularTotaisPessoa, calcularTotaisGerais } from './currency';
+import { formatarCentavos, calcularTotaisPessoa, calcularTotaisGerais, calcularDivisaoLucros } from './currency';
 
 export interface OpcoesExportacaoPDF {
   pessoasIds: string[]; // IDs das pessoas a incluir
@@ -20,6 +20,7 @@ export interface OpcoesExportacaoPDF {
   };
   incluirImagens: boolean;
   incluirAbaGeral: boolean;
+  incluirDivisaoLucros?: boolean;
 }
 
 export async function gerarRelatorioPDF(
@@ -116,6 +117,70 @@ export async function gerarRelatorioPDF(
       body: bodyPessoas,
       theme: 'grid',
       headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 8 },
+      margin: { left: 14, right: 14 },
+    });
+
+    cursorY = (doc as any).lastAutoTable.finalY + 10;
+  }
+
+  // -----------------------------------------------------------------
+  // SEÇÃO DE DIVISÃO DE LUCROS
+  // -----------------------------------------------------------------
+  if (opcoes.incluirDivisaoLucros) {
+    if (cursorY > pageHeight - 70) {
+      doc.addPage();
+      cursorY = 20;
+    }
+
+    const calculoLucro = calcularDivisaoLucros(acerto, lancamentos);
+
+    doc.setFillColor(236, 253, 245);
+    doc.roundedRect(14, cursorY, pageWidth - 28, 26, 3, 3, 'F');
+    doc.setDrawColor(167, 243, 208);
+    doc.roundedRect(14, cursorY, pageWidth - 28, 26, 3, 3, 'S');
+
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(6, 95, 70);
+    doc.text('DEMONSTRATIVO DE DIVISÃO DE LUCROS', 18, cursorY + 7);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Receita (Entradas): ${formatarCentavos(calculoLucro.totalEntradasCentavos)}`, 18, cursorY + 14);
+    doc.text(`Gastos de Saída: ${formatarCentavos(calculoLucro.totalSaidasCentavos)}`, 85, cursorY + 14);
+    doc.text(`Margem: ${calculoLucro.margemLucroPercentual}%`, 150, cursorY + 14);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(calculoLucro.isLucroPositivo ? 4 : 225, calculoLucro.isLucroPositivo ? 120 : 29, calculoLucro.isLucroPositivo ? 87 : 72);
+    doc.text(`LUCRO LÍQUIDO APURADO: ${formatarCentavos(calculoLucro.lucroBrutoCentavos)}`, 18, cursorY + 22);
+
+    if (calculoLucro.reservaEmergenciaCentavos > 0) {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text(`(Retenção de ${calculoLucro.reservaPorcentagem}% para Fundo de Caixa: ${formatarCentavos(calculoLucro.reservaEmergenciaCentavos)})`, 105, cursorY + 22);
+    }
+
+    cursorY += 34;
+
+    const bodyLucros = calculoLucro.participantes.map((p) => [
+      p.nome,
+      `${p.porcentagem}%`,
+      formatarCentavos(p.cotaBrutaCentavos),
+      p.adiantamentosAbatidosCentavos > 0 ? `-${formatarCentavos(p.adiantamentosAbatidosCentavos)}` : 'R$ 0,00',
+      formatarCentavos(p.valorLiquidoAReceberCentavos),
+      p.status === 'a_receber' ? 'A Receber' : p.status === 'adiantou_mais_que_lucro' ? 'Adiantou a mais' : 'Quitado',
+    ]);
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [['Sócio / Participante', 'Cota (%)', 'Cota Bruta', 'Adiantamentos', 'Líquido a Receber', 'Situação']],
+      body: bodyLucros,
+      theme: 'grid',
+      headStyles: { fillColor: [4, 120, 87], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
       bodyStyles: { fontSize: 8 },
       margin: { left: 14, right: 14 },
     });

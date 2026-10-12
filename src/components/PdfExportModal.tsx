@@ -25,6 +25,7 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
   );
 
   const [incluirAbaGeral, setIncluirAbaGeral] = useState<boolean>(!pessoaPreSelecionadaId);
+  const [incluirDivisaoLucros, setIncluirDivisaoLucros] = useState<boolean>(true);
 
   const [secoes, setSecoes] = useState({
     resumo: true,
@@ -55,8 +56,8 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
   };
 
   const handleExportar = async (compartilhar: boolean) => {
-    if (pessoasSelecionadas.length === 0 && !incluirAbaGeral) {
-      alert('Selecione pelo menos uma pessoa ou marque o Resumo Geral para gerar o PDF.');
+    if (pessoasSelecionadas.length === 0 && !incluirAbaGeral && !incluirDivisaoLucros) {
+      alert('Selecione pelo menos uma pessoa, a Aba Geral ou a Divisão de Lucros para gerar o PDF.');
       return;
     }
 
@@ -67,6 +68,7 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
         secoes,
         incluirImagens,
         incluirAbaGeral,
+        incluirDivisaoLucros,
       };
 
       const doc = await gerarRelatorioPDF(acerto, lancamentos, imagens, opcoes);
@@ -125,6 +127,20 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
               type="checkbox"
               checked={incluirAbaGeral}
               onChange={(e) => setIncluirAbaGeral(e.target.checked)}
+              className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+            />
+          </div>
+
+          {/* Divisão de Lucros */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+            <div>
+              <span className="font-bold text-slate-900 dark:text-white block">Incluir Divisão de Lucros</span>
+              <span className="text-xs text-slate-500">Demonstrativo de receita, saídas, lucro apurado e cotas dos sócios</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={incluirDivisaoLucros}
+              onChange={(e) => setIncluirDivisaoLucros(e.target.checked)}
               className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
             />
           </div>

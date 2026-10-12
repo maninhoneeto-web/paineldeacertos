@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Plus, Camera, FileText, ShieldCheck, Database, Settings, 
-  Trash2, Edit2, Check, X, Tag, MoreHorizontal, ArrowRightLeft, Sparkles, AlertTriangle
+  Trash2, Edit2, Check, X, Tag, MoreHorizontal, ArrowRightLeft, Sparkles, AlertTriangle, Percent
 } from 'lucide-react';
 import { 
   Acerto, Lancamento, ImagemComprovante, HistoricoItem, PessoaTab, 
-  TipoLancamento, LinhaConferenciaOCR, ResultadoOCR 
+  TipoLancamento, LinhaConferenciaOCR, ResultadoOCR, ConfigDivisaoLucros 
 } from '../types';
 import { TabGeral } from './TabGeral';
 import { TabPessoa } from './TabPessoa';
+import { TabDivisaoLucros } from './TabDivisaoLucros';
 import { ConferenceModal } from './ConferenceModal';
 import { LancamentoFormModal } from './LancamentoFormModal';
 import { PdfExportModal } from './PdfExportModal';
@@ -461,6 +462,16 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
     handleTrocarAba('geral');
   };
 
+  const handleSalvarConfigLucros = async (config: ConfigDivisaoLucros) => {
+    const atualizado: Acerto = {
+      ...acerto,
+      configDivisaoLucros: config,
+    };
+    await salvarAcerto(atualizado);
+    onAtualizarAcerto(atualizado);
+    await recarregarTudo();
+  };
+
   const pessoaAtiva = acerto.pessoas.find((p) => p.id === abaAtiva);
 
   return (
@@ -538,7 +549,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
 
         </div>
 
-        {/* NAVEGAÇÃO DAS ABAS POR PESSOA COM BOTÃO "+ NOVA PESSOA" */}
+        {/* NAVEGAÇÃO DAS ABAS POR PESSOA COM BOTÃO "+ NOVA PESSOA" E "DIVISÃO DE LUCROS" */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-1 flex items-center gap-1 overflow-x-auto scrollbar-none">
           {/* Aba Geral (sempre a primeira) */}
           <button
@@ -551,6 +562,19 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             <span>GERAL</span>
+          </button>
+
+          {/* Aba DIVISÃO DE LUCROS */}
+          <button
+            onClick={() => handleTrocarAba('divisao_lucros')}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
+              abaAtiva === 'divisao_lucros'
+                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
+            }`}
+          >
+            <Percent className="w-3.5 h-3.5 text-emerald-500" />
+            <span>DIVISÃO DE LUCROS</span>
           </button>
 
           {/* Abas individuais de cada pessoa */}
@@ -600,6 +624,16 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             lancamentos={lancamentos}
             onSelecionarPessoa={(id) => handleTrocarAba(id)}
             onNovaPessoa={() => setModalNovaPessoa(true)}
+          />
+        ) : abaAtiva === 'divisao_lucros' ? (
+          <TabDivisaoLucros
+            acerto={acerto}
+            lancamentos={lancamentos}
+            onSalvarConfigLucros={handleSalvarConfigLucros}
+            onExportarPdf={() => {
+              setPdfPessoaIdFoco(undefined);
+              setModalPdfAberto(true);
+            }}
           />
         ) : pessoaAtiva ? (
           <TabPessoa
