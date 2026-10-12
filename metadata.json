@@ -1,0 +1,6 @@
+{
+  "name": "AcertoFácil - Acertos Financeiros & Gestão",
+  "description": "Controle completo de acertos financeiros com pessoas e obras, com leitura inteligente de comprovantes e recibos via IA, balanços em centavos e relatórios em PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
