@@ -257,27 +257,37 @@ export function calcularTotaisGerais(pessoas: PessoaTab[], lancamentos: Lancamen
 
 /**
  * Calcula a Divisão de Lucros do acerto:
- * Regra: Sempre diminuir os totais de gastos de saída (saídas + materiais) das entradas (receita bruta).
- * O que sobra é o Lucro Líquido a ser distribuído entre os sócios / participantes conforme as cotas (%).
+ * REGRAS OBRIGATÓRIAS AUTOMATIZADAS:
+ * 1. Entrada (Faturamento do Projeto): R$ 9.000,00 padrão (ou configurado/entradas registradas)
+ * 2. Dedução automática de R$ 1.000,00 da Taxa de Projeto => Base de Cálculo Real = R$ 8.000,00
+ * 3. Varre a lista de lançamentos e soma o valor total de gastos de saídas (saídas + materiais)
+ * 4. Lucro Líquido Real = Base de Cálculo Real - Soma de Todas as Saídas
+ * 5. Divisão automática em exatamente 50% para cada sócio: Neto e Victor
+ * 6. REGRA AUTOMÁTICA DE ADIANTAMENTOS: Se um lançamento for adiantamento/vale alocado para o sócio "Neto"
+ *    (ex: R$ 601,00 Itatiaia), o sistema subtrai esse valor AUTOMATICAMENTE e EXCLUSIVAMENTE do saldo final que o Neto tem a receber.
+ *    Esse desconto pessoal NÃO diminui a Base de Cálculo do projeto e NÃO afeta o valor líquido que o Victor tem a receber.
  */
 export function calcularDivisaoLucros(
   acerto: Acerto,
   lancamentos: Lancamento[],
   configCustom?: import('../types').ConfigDivisaoLucros
 ): import('../types').CalculoDivisaoLucros {
-  const config = configCustom || acerto.configDivisaoLucros || {
-    reservaEmergenciaPorcentagem: 0,
-    participantes: [],
-  };
+  const config = configCustom || acerto.configDivisaoLucros;
 
-  let totalEntradasCentavos = 0;
+  // 1. Faturamento do Projeto (Padrão R$ 9.000,00 = 900.000 centavos)
+  let faturamentoProjetoCentavos = config?.faturamentoProjetoCentavos !== undefined
+    ? config.faturamentoProjetoCentavos
+    : 900000;
+
+  // Se houver entradas explícitas registradas que superem ou configurem o projeto
+  let totalEntradasLancadasCentavos = 0;
   let totalSaidasDespesasCentavos = 0;
   let totalMateriaisCentavos = 0;
 
   for (const l of lancamentos) {
     const valor = Math.abs(l.valorCentavos || 0);
     if (l.tipo === 'entrada') {
-      totalEntradasCentavos += valor;
+      totalEntradasLancadasCentavos += valor;
     } else if (l.tipo === 'saida') {
       totalSaidasDespesasCentavos += valor;
     } else if (l.tipo === 'material') {
@@ -285,14 +295,27 @@ export function calcularDivisaoLucros(
     }
   }
 
-  // Gastos totais de saída da obra/acerto
-  const totalSaidasCentavos = totalSaidasDespesasCentavos + totalMateriaisCentavos;
+  // Se o usuário lançou entradas maiores que 0 e não definiu manualmente faturamento, podemos usar as entradas registradas
+  if (config?.faturamentoProjetoCentavos === undefined && totalEntradasLancadasCentavos > 0) {
+    faturamentoProjetoCentavos = totalEntradasLancadasCentavos;
+  }
 
-  // Lucro Real = Entradas - Saídas
-  const lucroBrutoCentavos = totalEntradasCentavos - totalSaidasCentavos;
+  // 2. Taxa de Projeto deduzida automaticamente (Padrão R$ 1.000,00 = 100.000 centavos)
+  const taxaProjetoCentavos = config?.taxaProjetoCentavos !== undefined
+    ? config.taxaProjetoCentavos
+    : 100000;
+
+  // Base de Cálculo Real = Faturamento - Taxa de Projeto (Padrão R$ 8.000,00 = 800.000 centavos)
+  const baseCalculoRealCentavos = Math.max(0, faturamentoProjetoCentavos - taxaProjetoCentavos);
+
+  // 3. Soma de Todas as Saídas (despesas operacionais + materiais da lista, sem adiantamentos pessoais)
+  const somaTodasSaidasCentavos = totalSaidasDespesasCentavos + totalMateriaisCentavos;
+
+  // 4. Lucro Líquido Real = Base de Cálculo Real - Soma de Todas as Saídas
+  const lucroBrutoCentavos = baseCalculoRealCentavos - somaTodasSaidasCentavos;
   const isLucroPositivo = lucroBrutoCentavos > 0;
 
-  const reservaPorcentagem = config.reservaEmergenciaPorcentagem || 0;
+  const reservaPorcentagem = config?.reservaEmergenciaPorcentagem || 0;
   const reservaEmergenciaCentavos = isLucroPositivo && reservaPorcentagem > 0
     ? Math.round((lucroBrutoCentavos * reservaPorcentagem) / 100)
     : 0;
@@ -301,38 +324,61 @@ export function calcularDivisaoLucros(
     ? Math.max(0, lucroBrutoCentavos - reservaEmergenciaCentavos)
     : 0;
 
-  const margemLucroPercentual = totalEntradasCentavos > 0
-    ? Number(((lucroBrutoCentavos / totalEntradasCentavos) * 100).toFixed(1))
+  const margemLucroPercentual = faturamentoProjetoCentavos > 0
+    ? Number(((lucroBrutoCentavos / faturamentoProjetoCentavos) * 100).toFixed(1))
     : 0;
 
-  // Participantes padrão caso nenhum esteja cadastrado: pessoas do acerto
-  let participantesConfig: ParticipanteLucro[] = config.participantes || [];
-  if (participantesConfig.length === 0 && acerto.pessoas.length > 0) {
-    const cotaIgual = Number((100 / acerto.pessoas.length).toFixed(2));
-    participantesConfig = acerto.pessoas.map((p: PessoaTab) => ({
-      id: p.id,
-      pessoaId: p.id,
-      nome: p.nome,
-      porcentagem: cotaIgual,
-      descontarAdiantamentos: true,
-    }));
+  // 5. Configurar sócios padrão: Neto (50%) e Victor (50%) se não configurado
+  let participantesConfig: ParticipanteLucro[] = config?.participantes || [];
+  if (participantesConfig.length === 0) {
+    // Procura pessoas com nomes similares no acerto ou cria os 2 sócios padrão
+    const pessoaNeto = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('neto'));
+    const pessoaVictor = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('victor'));
+
+    participantesConfig = [
+      {
+        id: pessoaNeto ? pessoaNeto.id : 'socio_neto',
+        pessoaId: pessoaNeto?.id,
+        nome: pessoaNeto ? pessoaNeto.nome : 'Neto',
+        porcentagem: 50,
+        descontarAdiantamentos: true,
+      },
+      {
+        id: pessoaVictor ? pessoaVictor.id : 'socio_victor',
+        pessoaId: pessoaVictor?.id,
+        nome: pessoaVictor ? pessoaVictor.nome : 'Victor',
+        porcentagem: 50,
+        descontarAdiantamentos: true,
+      },
+    ];
   }
 
   let totalPorcentagemAlocada = 0;
   const participantesCalculados: ParticipanteLucroCalculado[] = participantesConfig.map((p: ParticipanteLucro) => {
     totalPorcentagemAlocada += p.porcentagem;
 
+    // Cota bruta baseada em 50% (ou na porcentagem do sócio) do Lucro Líquido Real
     const cotaBrutaCentavos = isLucroPositivo
       ? Math.round((lucroLiquidoDistribuivelCentavos * p.porcentagem) / 100)
       : 0;
 
-    // Calcular adiantamentos já pegos por esta pessoa se configurado
+    // 6. REGRA AUTOMÁTICA DE ADIANTAMENTOS:
+    // Se o sócio for "Neto" (ou qualquer com descontarAdiantamentos = true),
+    // somamos todos os adiantamentos / vales destinados a ele (ex: R$ 601,00 Itatiaia).
+    // Esse desconto é AUTOMÁTICO e EXCLUSIVO dele e NÃO afeta o saldo de Victor ou a Base do projeto.
     let adiantamentosAbatidosCentavos = 0;
     if (p.descontarAdiantamentos !== false) {
-      const lancsPessoa = lancamentos.filter((l) => (p.pessoaId ? l.pessoaId === p.pessoaId : l.pessoaId === p.id));
-      for (const l of lancsPessoa) {
+      const pNome = p.nome.toLowerCase().trim();
+      for (const l of lancamentos) {
         if (l.tipo === 'adiantamento') {
-          adiantamentosAbatidosCentavos += Math.abs(l.valorCentavos || 0);
+          const lNomePessoa = acerto.pessoas.find((pes) => pes.id === l.pessoaId)?.nome.toLowerCase().trim() || '';
+          const matchId = (p.pessoaId && l.pessoaId === p.pessoaId) || l.pessoaId === p.id;
+          const matchNome = (pNome.includes('neto') && (lNomePessoa.includes('neto') || l.descricao.toLowerCase().includes('neto'))) ||
+                            (pNome.includes('victor') && (lNomePessoa.includes('victor') || l.descricao.toLowerCase().includes('victor')));
+          
+          if (matchId || matchNome) {
+            adiantamentosAbatidosCentavos += Math.abs(l.valorCentavos || 0);
+          }
         }
       }
     }
@@ -359,9 +405,13 @@ export function calcularDivisaoLucros(
   });
 
   return {
-    totalEntradasCentavos,
-    totalSaidasCentavos,
-    totalCustosCentavos: totalSaidasCentavos,
+    faturamentoProjetoCentavos,
+    taxaProjetoCentavos,
+    baseCalculoRealCentavos,
+    somaTodasSaidasCentavos,
+    totalEntradasCentavos: faturamentoProjetoCentavos,
+    totalSaidasCentavos: somaTodasSaidasCentavos,
+    totalCustosCentavos: somaTodasSaidasCentavos,
     lucroBrutoCentavos,
     reservaEmergenciaCentavos,
     reservaPorcentagem,

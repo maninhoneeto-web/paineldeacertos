@@ -168,14 +168,14 @@ export const TabPessoa: React.FC<TabPessoaProps> = ({
             <span>+ Lançamento</span>
           </button>
 
-          {/* Gerar PDF desta Pessoa */}
+          {/* Salvar em PDF desta Pessoa */}
           <button
             onClick={onGerarPdfPessoa}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs sm:text-sm transition cursor-pointer"
-            title="Gerar relatório em PDF desta pessoa"
+            title="Salvar relatório contábil em PDF desta pessoa"
           >
             <FileText className="w-4 h-4 text-emerald-600" />
-            <span>PDF</span>
+            <span>Salvar em PDF</span>
           </button>
         </div>
       </div>

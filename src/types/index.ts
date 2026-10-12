@@ -34,6 +34,8 @@ export interface ParticipanteLucro {
 }
 
 export interface ConfigDivisaoLucros {
+  faturamentoProjetoCentavos?: number; // Valor fixo inicial da entrada (padrão R$ 9.000,00 = 900000)
+  taxaProjetoCentavos?: number; // Dedução automática da Taxa de Projeto (padrão R$ 1.000,00 = 100000)
   reservaEmergenciaPorcentagem: number; // ex: 0 a 50 (%) retido para reinvestimento/fundo de caixa
   participantes: ParticipanteLucro[];
   observacoes?: string;
@@ -201,10 +203,14 @@ export interface ParticipanteLucroCalculado {
 }
 
 export interface CalculoDivisaoLucros {
+  faturamentoProjetoCentavos: number; // R$ 9.000,00 padrão (ou entradas registradas)
+  taxaProjetoCentavos: number; // R$ 1.000,00 taxa deduzida
+  baseCalculoRealCentavos: number; // R$ 8.000,00 (Faturamento - Taxa)
+  somaTodasSaidasCentavos: number; // Soma de todas as saídas e gastos operacionais (excluindo adiantamentos pessoais)
   totalEntradasCentavos: number; // Receita Total
-  totalSaidasCentavos: number; // Despesas / Saídas totais (saídas + materiais)
+  totalSaidasCentavos: number; // Despesas / Saídas totais
   totalCustosCentavos: number;
-  lucroBrutoCentavos: number; // Entradas - Saídas
+  lucroBrutoCentavos: number; // Lucro Líquido Real = Base de Cálculo Real - Soma de Todas as Saídas
   reservaEmergenciaCentavos: number;
   reservaPorcentagem: number;
   lucroLiquidoDistribuivelCentavos: number;

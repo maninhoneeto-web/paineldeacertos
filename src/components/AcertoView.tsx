@@ -550,10 +550,46 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             {/* PWA Install */}
             <PWAInstallButton />
 
+            {/* BOTÃO PROEMINENTE E VISÍVEL "Salvar em PDF" */}
+            <button
+              onClick={async () => {
+                try {
+                  const { gerarRelatorioPDF } = await import('../utils/pdfGenerator');
+                  const doc = await gerarRelatorioPDF(acerto, lancamentos, imagens, {
+                    pessoasIds: acerto.pessoas.map((p) => p.id),
+                    secoes: {
+                      resumo: true,
+                      entradas: true,
+                      saidas: true,
+                      adiantamentos: true,
+                      materiais: true,
+                      dividas: true,
+                    },
+                    incluirImagens: false,
+                    incluirAbaGeral: true,
+                    incluirDivisaoLucros: true,
+                  });
+                  const sanitizado = acerto.titulo.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                  const nomeArquivo = `nds_cftv_digital_${sanitizado}_${new Date().toISOString().slice(0, 10)}.pdf`;
+                  doc.save(nomeArquivo);
+                } catch (err: any) {
+                  console.error(err);
+                  // Se falhar o download direto, abre o modal
+                  setPdfPessoaIdFoco(undefined);
+                  setModalPdfAberto(true);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-700/20 transition cursor-pointer"
+              title="Salvar relatório contábil em PDF da NDS CFTV Digital"
+            >
+              <FileText className="w-4 h-4 text-emerald-100" />
+              <span>Salvar em PDF</span>
+            </button>
+
             {/* Ler Foto com IA */}
-            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 active:scale-95 text-white text-xs font-bold shadow-xs transition cursor-pointer">
-              <Camera className="w-4 h-4 text-emerald-200" />
-              <span>{isProcessandoImagem ? 'Lendo...' : 'Ler Foto (IA)'}</span>
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition cursor-pointer">
+              <Camera className="w-4 h-4 text-emerald-600" />
+              <span className="hidden sm:inline">{isProcessandoImagem ? 'Lendo...' : 'Ler Foto (IA)'}</span>
               <input
                 type="file"
                 accept="image/*"
@@ -569,24 +605,11 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             {/* Agente Financeiro */}
             <button
               onClick={() => setModalAgenteAberto(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition active:scale-95 cursor-pointer"
               title="Agente de auditoria contábil e alertas"
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span className="hidden md:inline">Agente Financeiro</span>
-            </button>
-
-            {/* Gerar PDF */}
-            <button
-              onClick={() => {
-                setPdfPessoaIdFoco(undefined);
-                setModalPdfAberto(true);
-              }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
-              title="Exportar PDF do acerto"
-            >
-              <FileText className="w-4 h-4 text-emerald-600" />
-              <span className="hidden sm:inline">Gerar PDF</span>
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span className="hidden md:inline">Auditoria</span>
             </button>
 
             {/* Backup */}

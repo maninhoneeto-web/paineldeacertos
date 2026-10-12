@@ -29,20 +29,25 @@ export const TabDivisaoLucros: React.FC<TabDivisaoLucrosProps> = ({
     if (acerto.configDivisaoLucros?.participantes && acerto.configDivisaoLucros.participantes.length > 0) {
       return acerto.configDivisaoLucros.participantes;
     }
-    // Cria participantes padrão com as pessoas do acerto divididas igualmente
-    if (acerto.pessoas.length > 0) {
-      const cota = Number((100 / acerto.pessoas.length).toFixed(1));
-      return acerto.pessoas.map((p, idx) => ({
-        id: p.id,
-        pessoaId: p.id,
-        nome: p.nome,
-        porcentagem: idx === acerto.pessoas.length - 1 ? Number((100 - cota * (acerto.pessoas.length - 1)).toFixed(1)) : cota,
-        descontarAdiantamentos: true,
-      }));
-    }
+    // Procura pessoas já cadastradas com os nomes Neto e Victor ou cria os 2 sócios padrão (50% cada)
+    const pessoaNeto = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('neto'));
+    const pessoaVictor = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('victor'));
+
     return [
-      { id: 'socio_1', nome: 'Sócio 1 (Você)', porcentagem: 50, descontarAdiantamentos: true },
-      { id: 'socio_2', nome: 'Sócio 2', porcentagem: 50, descontarAdiantamentos: true },
+      {
+        id: pessoaNeto ? pessoaNeto.id : 'socio_neto',
+        pessoaId: pessoaNeto?.id,
+        nome: pessoaNeto ? pessoaNeto.nome : 'Neto',
+        porcentagem: 50,
+        descontarAdiantamentos: true,
+      },
+      {
+        id: pessoaVictor ? pessoaVictor.id : 'socio_victor',
+        pessoaId: pessoaVictor?.id,
+        nome: pessoaVictor ? pessoaVictor.nome : 'Victor',
+        porcentagem: 50,
+        descontarAdiantamentos: true,
+      },
     ];
   });
 
@@ -178,112 +183,131 @@ export const TabDivisaoLucros: React.FC<TabDivisaoLucrosProps> = ({
   return (
     <div className="space-y-6 animate-fade-in">
       
-      {/* BANNER PRINCIPAL DE LUCRO LÍQUIDO REAL */}
+      {/* BANNER PRINCIPAL: NDS CFTV DIGITAL & CÁLCULO AUTOMÁTICO DE LUCRO LÍQUIDO REAL */}
       <div className={`relative overflow-hidden rounded-2xl text-white p-5 sm:p-7 shadow-xl border ${
         calculo.isLucroPositivo
-          ? 'bg-gradient-to-br from-emerald-800 via-teal-900 to-slate-900 border-emerald-600/40'
-          : 'bg-gradient-to-br from-rose-900 via-slate-900 to-slate-950 border-rose-700/40'
+          ? 'bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 border-emerald-600/40'
+          : 'bg-gradient-to-br from-rose-950 via-slate-900 to-slate-950 border-rose-700/40'
       }`}>
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-white/10 text-white border border-white/20">
-                <Percent className="w-3.5 h-3.5 text-emerald-300" />
-                <span>Divisão de Lucros & Resultados</span>
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>NDS CFTV DIGITAL • Fechamento Financeiro</span>
               </span>
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                calculo.isLucroPositivo ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
-              }`}>
-                Margem: {calculo.margemLucroPercentual}%
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/10 text-slate-200 border border-white/10">
+                50% Neto / 50% Victor
               </span>
             </div>
 
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-              {calculo.isLucroPositivo ? 'Lucro Líquido Real Apurado' : 'Prejuízo Operacional Registrado'}
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
+              {calculo.isLucroPositivo ? 'Lucro Líquido Real Automatizado' : 'Prejuízo Operacional Registrado'}
             </h2>
             
-            {/* Regra explícita do usuário: Entradas diminuídas dos totais de saída */}
-            <p className="text-xs sm:text-sm text-slate-200/90 mt-1.5 max-w-xl font-medium">
-              Regra de Apuração: <strong>Total de Entradas ({formatarCentavos(calculo.totalEntradasCentavos)})</strong> diminuído do <strong>Total de Saídas e Materiais ({formatarCentavos(calculo.totalSaidasCentavos)})</strong>. O que sobra é o lucro líquido a dividir.
-            </p>
+            {/* Demonstração da Fórmula Automática */}
+            <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-200 space-y-1">
+              <p className="font-semibold text-emerald-300">
+                Fórmula Automática: (Base de Cálculo Real R$ 8.000,00 - Soma de Todas as Saídas)
+              </p>
+              <p className="text-[11px] text-slate-300">
+                • Entrada Inicial (Faturamento): <strong>{formatarCentavos(calculo.faturamentoProjetoCentavos)}</strong>
+                <br />• Taxa de Projeto Deduzida: <strong>-{formatarCentavos(calculo.taxaProjetoCentavos)}</strong>
+                <br />• <strong>Base de Cálculo Real Fixada: {formatarCentavos(calculo.baseCalculoRealCentavos)}</strong>
+                <br />• Total de Saídas / Gastos: <strong>-{formatarCentavos(calculo.somaTodasSaidasCentavos)}</strong>
+              </p>
+            </div>
           </div>
 
-          {/* Card Destacado do Lucro */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/20 text-right shrink-0 min-w-[220px]">
-            <span className="block text-[11px] font-bold uppercase tracking-wider text-emerald-200">
-              {calculo.isLucroPositivo ? 'Lucro Total que Sobrou' : 'Prejuízo Total'}
-            </span>
-            <div className="text-2xl sm:text-3xl font-black font-mono mt-0.5 tracking-tight">
-              {formatarCentavos(calculo.lucroBrutoCentavos)}
+          {/* Card Destacado do Lucro Líquido Real e Botão PDF */}
+          <div className="flex flex-col items-end gap-3 w-full lg:w-auto shrink-0">
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/20 text-right w-full lg:min-w-[260px]">
+              <span className="block text-[11px] font-bold uppercase tracking-wider text-emerald-300">
+                Lucro Líquido Real
+              </span>
+              <div className="text-3xl sm:text-4xl font-black font-mono mt-0.5 tracking-tight text-white">
+                {formatarCentavos(calculo.lucroBrutoCentavos)}
+              </div>
+              <span className="inline-block mt-1 text-xs font-semibold text-emerald-200">
+                {calculo.isLucroPositivo
+                  ? `✓ Exatos 50% para cada sócio: ${formatarCentavos(Math.round(calculo.lucroBrutoCentavos / 2))}`
+                  : '⚠ Despesas superam a Base de Cálculo'}
+              </span>
             </div>
-            <span className="inline-block mt-1 text-[11px] font-semibold text-emerald-200/90">
-              {calculo.isLucroPositivo
-                ? `✓ ${formatarCentavos(calculo.lucroLiquidoDistribuivelCentavos)} distribuível`
-                : '⚠ Gastos superam as receitas'}
-            </span>
+
+            {onExportarPdf && (
+              <button
+                type="button"
+                onClick={onExportarPdf}
+                className="w-full lg:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md transition cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-emerald-100" />
+                <span>Salvar em PDF</span>
+              </button>
+            )}
           </div>
         </div>
 
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* 4 CARDS RESUMO DO FLUXO FINANCEIRO */}
+      {/* 4 CARDS: FATURAMENTO, TAXA, BASE REAL, SAÍDAS TOTAIS */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         
-        {/* Entradas */}
+        {/* 1. Entrada / Faturamento */}
         <div className="rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-emerald-600 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total de Entradas</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">1. Entrada (Faturamento)</span>
             <span className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
               <TrendingUp className="w-4 h-4" />
             </span>
           </div>
           <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">
-            {formatarCentavos(calculo.totalEntradasCentavos)}
+            {formatarCentavos(calculo.faturamentoProjetoCentavos)}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Receita bruta arrecadada</p>
+          <p className="text-[11px] text-slate-400 mt-1">Faturamento Fixo Inicial</p>
         </div>
 
-        {/* Saídas e Materiais */}
-        <div className="rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between text-rose-600 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Gastos de Saída</span>
-            <span className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400">
-              <TrendingDown className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">
-            {formatarCentavos(calculo.totalSaidasCentavos)}
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Despesas + materiais da obra</p>
-        </div>
-
-        {/* Reserva de Emergência / Fundo */}
+        {/* 2. Taxa de Projeto */}
         <div className="rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-amber-600 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Fundo Retido ({reservaPorcentagem}%)</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">2. Taxa de Projeto</span>
             <span className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">
-              <ShieldCheck className="w-4 h-4" />
+              <Percent className="w-4 h-4" />
             </span>
           </div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">
-            {formatarCentavos(calculo.reservaEmergenciaCentavos)}
+          <div className="text-lg sm:text-xl font-bold font-mono text-amber-600 dark:text-amber-400">
+            -{formatarCentavos(calculo.taxaProjetoCentavos)}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Fundo de reserva / caixa</p>
+          <p className="text-[11px] text-slate-400 mt-1">Dedução Automática</p>
         </div>
 
-        {/* Lucro Distribuível */}
-        <div className="rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+        {/* 3. Base de Cálculo Real */}
+        <div className="rounded-2xl p-4 bg-white dark:bg-slate-900 border-2 border-emerald-500/40 shadow-xs">
           <div className="flex items-center justify-between text-teal-600 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Lucro a Distribuir</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">3. Base de Cálculo Real</span>
             <span className="p-1.5 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-400">
               <DollarSign className="w-4 h-4" />
             </span>
           </div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-            {formatarCentavos(calculo.lucroLiquidoDistribuivelCentavos)}
+          <div className="text-lg sm:text-xl font-black font-mono text-emerald-700 dark:text-emerald-400">
+            {formatarCentavos(calculo.baseCalculoRealCentavos)}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Soma das cotas dos sócios</p>
+          <p className="text-[11px] text-slate-400 mt-1">R$ 9.000 - R$ 1.000</p>
+        </div>
+
+        {/* 4. Total de Saídas / Gastos */}
+        <div className="rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center justify-between text-rose-600 mb-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">4. Soma de Saídas</span>
+            <span className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400">
+              <TrendingDown className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="text-lg sm:text-xl font-bold font-mono text-rose-600 dark:text-rose-400">
+            {formatarCentavos(calculo.somaTodasSaidasCentavos)}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Varrida automática de gastos</p>
         </div>
 
       </div>
@@ -525,10 +549,11 @@ export const TabDivisaoLucros: React.FC<TabDivisaoLucrosProps> = ({
               <button
                 type="button"
                 onClick={onExportarPdf}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold shadow-xs transition cursor-pointer"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs font-bold shadow-md transition cursor-pointer"
+                title="Salvar relatório contábil em PDF"
               >
-                <FileText className="w-4 h-4 text-emerald-600" />
-                <span>Exportar Relatório</span>
+                <FileText className="w-4 h-4 text-emerald-100" />
+                <span>Salvar em PDF</span>
               </button>
             )}
 
