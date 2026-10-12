@@ -138,6 +138,8 @@ export interface LinhaConferenciaOCR {
 
 export interface ResultadoOCR {
   tipoDocumento: string;
+  tituloSugeridoAcerto?: string;
+  todasPessoasIdentificadas?: string[];
   totalEscritoNaAnotacaoCentavos?: number;
   totalEscritoFormatado?: string;
   estabelecimentoOuLoja?: string;

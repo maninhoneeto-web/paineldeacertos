@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Acerto, StatusAcerto, PessoaTab } from './types';
+import { Acerto, StatusAcerto, PessoaTab, LinhaConferenciaOCR, ImagemComprovante, Lancamento } from './types';
 import { 
   listarAcertos, obterAcerto, salvarAcerto, duplicarAcerto, excluirAcerto, 
+  salvarImagem, salvarMultiplosLancamentos, registrarHistorico,
   inicializarDadosSeNecessario, salvarConfig, obterConfig 
 } from './services/db';
 import { AcertosList } from './components/AcertosList';
@@ -100,6 +101,97 @@ export default function App() {
     handleSelecionarAcerto(id);
   };
 
+  const handleCriarAcertoCompletoPorFoto = async (dados: {
+    titulo: string;
+    pessoas: PessoaTab[];
+    linhas: LinhaConferenciaOCR[];
+    imagemDataUrl: string;
+    imagemHash: string;
+    nomeArquivo: string;
+    tamanhoBytes: number;
+    tipoDocumento: string;
+    totalEscritoCentavos: number;
+    observacoes: string;
+  }) => {
+    const acertoId = 'acerto_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const imagemId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+
+    const novoAcerto: Acerto = {
+      id: acertoId,
+      titulo: dados.titulo || 'Acerto Organizado por Foto',
+      dataInicio: new Date().toISOString().slice(0, 10),
+      status: 'aberto',
+      observacoes: dados.observacoes || 'Criado e organizado automaticamente por IA a partir de folha de acerto.',
+      pessoas: dados.pessoas,
+      categorias: [
+        'Mão de Obra',
+        'Material de Construção',
+        'Alimentação',
+        'Combustível',
+        'Ferramentas',
+        'Transporte',
+        'Outros',
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await salvarAcerto(novoAcerto);
+
+    const lancamentosParaSalvar: Lancamento[] = [];
+    const lancamentosIds: string[] = [];
+
+    for (const linha of dados.linhas) {
+      const lid = 'lanc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      lancamentosIds.push(lid);
+      lancamentosParaSalvar.push({
+        id: lid,
+        acertoId,
+        pessoaId: linha.pessoaId,
+        tipo: linha.tipoSugerido,
+        data: linha.data,
+        descricao: linha.descricao,
+        valorCentavos: linha.valorCentavos,
+        categoria: linha.categoria,
+        formaPagamento: linha.formaPagamento,
+        loja: linha.loja,
+        quantidade: linha.quantidade,
+        imagemId,
+        confianca: linha.confianca,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    const novaImagem: ImagemComprovante = {
+      id: imagemId,
+      acertoId,
+      pessoaId: dados.pessoas[0]?.id || 'geral',
+      dataUrl: dados.imagemDataUrl,
+      hash: dados.imagemHash,
+      nomeArquivo: dados.nomeArquivo,
+      tamanhoBytes: dados.tamanhoBytes,
+      tipoDocumentoIdentificado: dados.tipoDocumento,
+      totalEscritoCentavos: dados.totalEscritoCentavos,
+      observacoes: dados.observacoes,
+      lancamentosGeradosIds: lancamentosIds,
+      createdAt: new Date().toISOString(),
+    };
+
+    await salvarImagem(novaImagem);
+    await salvarMultiplosLancamentos(lancamentosParaSalvar);
+
+    await registrarHistorico({
+      acertoId,
+      acao: 'criacao',
+      tipoItem: 'acerto',
+      detalhes: `Acerto criado e estruturado automaticamente por IA com ${dados.pessoas.length} abas de pessoas e ${lancamentosParaSalvar.length} lançamentos.`,
+    });
+
+    await recarregarAcertos();
+    handleSelecionarAcerto(acertoId);
+  };
+
   const handleDuplicarAcerto = async (id: string) => {
     await duplicarAcerto(id);
     await recarregarAcertos();
@@ -155,6 +247,7 @@ export default function App() {
           acertos={acertos}
           onSelecionarAcerto={handleSelecionarAcerto}
           onCriarAcerto={handleCriarAcerto}
+          onCriarAcertoPorFoto={handleCriarAcertoCompletoPorFoto}
           onDuplicarAcerto={handleDuplicarAcerto}
           onAlterarStatus={handleAlterarStatus}
           onExcluirAcerto={handleExcluirAcerto}

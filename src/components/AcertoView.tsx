@@ -17,6 +17,7 @@ import { AgenteFinanceiroModal } from './AgenteFinanceiroModal';
 import { BackupModal } from './BackupModal';
 import { PWAInstallButton } from './PWAInstallButton';
 import { comprimirImagem } from '../utils/imageCompressor';
+import { extrairDadosAcertoComGemini } from '../services/geminiOcr';
 import { 
   salvarAcerto, salvarLancamento, salvarMultiplosLancamentos, excluirLancamento, 
   salvarImagem, verificarImagemDuplicada, excluirImagem, registrarHistorico, 
@@ -70,6 +71,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
     nomeArquivo: string;
     tamanhoBytes: number;
     tipoDocumentoIdentificado?: string;
+    tituloSugerido?: string;
+    pessoasIdentificadas?: string[];
     totalEscritoCentavos?: number;
     totalEscritoFormatado?: string;
     observacoesOCR?: string;
@@ -143,7 +146,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
     setStatusProcessamentoTexto(`Comprimindo imagem (1/${files.length})...`);
 
     try {
-      const file = files[0]; // Processa a primeira ou sequencial
+      const file = files[0];
       const imagemProcessada = await comprimirImagem(file);
 
       setStatusProcessamentoTexto('Verificando histórico e duplicidades...');
@@ -154,27 +157,15 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
       const nomesPessoas = acerto.pessoas.map((p) => p.nome);
       const pessoaAtual = acerto.pessoas.find((p) => p.id === abaAtiva)?.nome || '';
 
-      const res = await fetch('/api/gemini/extract-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: imagemProcessada.dataUrl,
-          mimeType: 'image/jpeg',
-          knownPersons: nomesPessoas,
-          currentPerson: pessoaAtual,
-        }),
+      const ocr = await extrairDadosAcertoComGemini({
+        imageBase64: imagemProcessada.dataUrl,
+        mimeType: 'image/jpeg',
+        knownPersons: nomesPessoas,
+        currentPerson: pessoaAtual,
       });
-
-      const json = await res.json();
-      if (!json.success) {
-        throw new Error(json.error || 'Erro na leitura do comprovante pelo Gemini.');
-      }
-
-      const ocr: ResultadoOCR = json.data;
 
       // Monta as linhas para a tela de conferência
       const linhasConferencia: LinhaConferenciaOCR[] = (ocr.linhas || []).map((l, idx) => {
-        // Tenta associar à pessoa sugerida
         let idPessoaDestino = abaAtiva !== 'geral' ? abaAtiva : acerto.pessoas[0]?.id || 'geral';
         if (l.pessoaSugerida) {
           const match = acerto.pessoas.find((p) =>
@@ -208,6 +199,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
         nomeArquivo: file.name,
         tamanhoBytes: imagemProcessada.tamanhoComprimidoBytes,
         tipoDocumentoIdentificado: ocr.tipoDocumento,
+        tituloSugerido: ocr.tituloSugeridoAcerto,
+        pessoasIdentificadas: ocr.todasPessoasIdentificadas || [],
         totalEscritoCentavos: ocr.totalEscritoNaAnotacaoCentavos || 0,
         totalEscritoFormatado: ocr.totalEscritoFormatado,
         observacoesOCR: ocr.observacoes,
@@ -216,7 +209,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
       });
     } catch (err: any) {
       console.error(err);
-      alert('Erro ao processar imagem: ' + (err.message || 'Verifique a conexão e tente novamente.'));
+      alert('Aviso: ' + (err.message || 'Verifique a conexão e tente novamente.'));
     } finally {
       setIsProcessandoImagem(false);
       setStatusProcessamentoTexto('');
@@ -225,6 +218,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
 
   // Salvar resultado confirmado da Tela de Conferência
   const handleConfirmarConferencia = async (dados: {
+    tituloAcerto?: string;
+    pessoasAtualizadas: PessoaTab[];
     linhas: LinhaConferenciaOCR[];
     imagemDataUrl: string;
     imagemHash: string;
@@ -234,6 +229,16 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
     totalEscritoCentavos: number;
     observacoes: string;
   }) => {
+    // Se novas pessoas foram criadas na conferência, atualiza o acerto
+    if (dados.pessoasAtualizadas && dados.pessoasAtualizadas.length !== acerto.pessoas.length) {
+      const acertoComPessoas: Acerto = {
+        ...acerto,
+        pessoas: dados.pessoasAtualizadas,
+      };
+      await salvarAcerto(acertoComPessoas);
+      onAtualizarAcerto(acertoComPessoas);
+    }
+
     const imagemId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
     const pessoaFotoId = abaAtiva !== 'geral' ? abaAtiva : dados.linhas[0]?.pessoaId || 'geral';
 
@@ -286,7 +291,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
       pessoaId: pessoaFotoId !== 'geral' ? pessoaFotoId : undefined,
       acao: 'upload_imagem',
       tipoItem: 'imagem',
-      detalhes: `Comprovante "${dados.nomeArquivo}" lido pela IA gerando ${lancamentosParaSalvar.length} lançamentos.`,
+      detalhes: `Comprovante "${dados.nomeArquivo}" lido pela IA gerando ${lancamentosParaSalvar.length} lançamentos organizados.`,
     });
 
     setDadosConferencia(null);
@@ -624,6 +629,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             lancamentos={lancamentos}
             onSelecionarPessoa={(id) => handleTrocarAba(id)}
             onNovaPessoa={() => setModalNovaPessoa(true)}
+            onUploadImagem={handleUploadImagens}
+            isEnviandoImagem={isProcessandoImagem}
           />
         ) : abaAtiva === 'divisao_lucros' ? (
           <TabDivisaoLucros
@@ -690,6 +697,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
           isOpen={true}
           onClose={() => setDadosConferencia(null)}
           acerto={acerto}
+          tituloSugerido={dadosConferencia.tituloSugerido}
+          pessoasIdentificadas={dadosConferencia.pessoasIdentificadas}
           pessoaAtualId={abaAtiva !== 'geral' ? abaAtiva : acerto.pessoas[0]?.id || 'geral'}
           imagemDataUrl={dadosConferencia.imagemDataUrl}
           imagemHash={dadosConferencia.imagemHash}

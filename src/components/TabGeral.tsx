@@ -1,7 +1,6 @@
-import React from 'react';
 import { 
   TrendingUp, TrendingDown, Users, AlertCircle, ArrowUpRight, ArrowDownRight, 
-  CheckCircle2, ChevronRight, DollarSign, PieChart, ShieldAlert
+  CheckCircle2, ChevronRight, DollarSign, PieChart, ShieldAlert, Camera, Sparkles
 } from 'lucide-react';
 import { Acerto, Lancamento, PessoaTab } from '../types';
 import { formatarCentavos, calcularTotaisGerais, calcularTotaisPessoa } from '../utils/currency';
@@ -11,6 +10,8 @@ interface TabGeralProps {
   lancamentos: Lancamento[];
   onSelecionarPessoa: (pessoaId: string) => void;
   onNovaPessoa: () => void;
+  onUploadImagem?: (files: FileList | null) => void;
+  isEnviandoImagem?: boolean;
 }
 
 export const TabGeral: React.FC<TabGeralProps> = ({
@@ -18,6 +19,8 @@ export const TabGeral: React.FC<TabGeralProps> = ({
   lancamentos,
   onSelecionarPessoa,
   onNovaPessoa,
+  onUploadImagem,
+  isEnviandoImagem = false,
 }) => {
   const totaisGerais = calcularTotaisGerais(acerto.pessoas, lancamentos);
 
@@ -53,6 +56,21 @@ export const TabGeral: React.FC<TabGeralProps> = ({
             <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-xl">
               {acerto.observacoes || 'Controle consolidado de todos os repasses, gastos, notas e pendências financeiras.'}
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {onUploadImagem && (
+                <label className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 text-xs font-bold shadow-md transition cursor-pointer active:scale-95">
+                  <Camera className="w-4 h-4 text-emerald-700" />
+                  <span>{isEnviandoImagem ? 'Processando Foto...' : '📷 Enviar Foto do Caderno / Acerto'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isEnviandoImagem}
+                    onChange={(e) => onUploadImagem(e.target.files)}
+                  />
+                </label>
+              )}
+            </div>
           </div>
 
           {/* Saldo Final */}

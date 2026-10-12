@@ -1,15 +1,30 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Plus, Search, Filter, FolderPlus, Copy, Archive, Trash2, Calendar, 
-  Users, ChevronRight, CheckCircle2, Lock, Clock, Database, Sparkles, FileText
+  Users, ChevronRight, CheckCircle2, Lock, Clock, Database, Sparkles, FileText, Camera
 } from 'lucide-react';
-import { Acerto, StatusAcerto, PessoaTab } from '../types';
+import { Acerto, StatusAcerto, PessoaTab, LinhaConferenciaOCR } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
+import { ConferenceModal } from './ConferenceModal';
+import { comprimirImagem } from '../utils/imageCompressor';
+import { extrairDadosAcertoComGemini } from '../services/geminiOcr';
 
 interface AcertosListProps {
   acertos: Acerto[];
   onSelecionarAcerto: (acertoId: string) => void;
   onCriarAcerto: (dados: { titulo: string; dataInicio: string; observacoes: string; pessoasIniciais: string[] }) => Promise<void>;
+  onCriarAcertoPorFoto?: (dados: {
+    titulo: string;
+    pessoas: PessoaTab[];
+    linhas: LinhaConferenciaOCR[];
+    imagemDataUrl: string;
+    imagemHash: string;
+    nomeArquivo: string;
+    tamanhoBytes: number;
+    tipoDocumento: string;
+    totalEscritoCentavos: number;
+    observacoes: string;
+  }) => Promise<void>;
   onDuplicarAcerto: (acertoId: string) => Promise<void>;
   onAlterarStatus: (acertoId: string, novoStatus: StatusAcerto) => Promise<void>;
   onExcluirAcerto: (acertoId: string) => Promise<void>;
@@ -20,6 +35,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
   acertos,
   onSelecionarAcerto,
   onCriarAcerto,
+  onCriarAcertoPorFoto,
   onDuplicarAcerto,
   onAlterarStatus,
   onExcluirAcerto,
@@ -30,7 +46,24 @@ export const AcertosList: React.FC<AcertosListProps> = ({
   const [filtroPessoa, setFiltroPessoa] = useState<string>('todas');
   const [modalNovoAberto, setModalNovoAberto] = useState(false);
 
-  // Form novo acerto
+  // Estado de Processamento de Foto de Acerto com IA
+  const [isProcessandoFoto, setIsProcessandoFoto] = useState(false);
+  const [statusProcessandoFoto, setStatusProcessandoFoto] = useState('');
+  const [dadosConferenciaFoto, setDadosConferenciaFoto] = useState<{
+    imagemDataUrl: string;
+    imagemHash: string;
+    nomeArquivo: string;
+    tamanhoBytes: number;
+    tipoDocumentoIdentificado?: string;
+    tituloSugerido?: string;
+    pessoasIdentificadas?: string[];
+    totalEscritoCentavos?: number;
+    totalEscritoFormatado?: string;
+    observacoesOCR?: string;
+    linhasIniciais: LinhaConferenciaOCR[];
+  } | null>(null);
+
+  // Form novo acerto manual
   const [novoTitulo, setNovoTitulo] = useState('');
   const [novaData, setNovaData] = useState(new Date().toISOString().slice(0, 10));
   const [novasObservacoes, setNovasObservacoes] = useState('');
@@ -107,6 +140,141 @@ export const AcertosList: React.FC<AcertosListProps> = ({
     }
   };
 
+  // Upload e leitura com IA de folha de acerto ou comprovante para criar novo acerto completo
+  const handleUploadFotoParaNovoAcerto = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    setIsProcessandoFoto(true);
+    setStatusProcessandoFoto('Comprimindo foto da folha/caderno...');
+
+    try {
+      const file = files[0];
+      const imagemProcessada = await comprimirImagem(file);
+
+      setStatusProcessandoFoto('IA analisando o acerto: identificando pessoas, gastos, vales, materiais e totais...');
+
+      const ocr = await extrairDadosAcertoComGemini({
+        imageBase64: imagemProcessada.dataUrl,
+        mimeType: 'image/jpeg',
+        knownPersons: todasPessoasNomes,
+        currentPerson: '',
+      });
+
+      const cores = ['#059669', '#0284c7', '#7c3aed', '#d97706', '#dc2626', '#4f46e5', '#0d9488'];
+      const pessoasCriadas: PessoaTab[] = [];
+
+      // Identifica pessoas extraídas
+      if (ocr.todasPessoasIdentificadas && ocr.todasPessoasIdentificadas.length > 0) {
+        ocr.todasPessoasIdentificadas.forEach((nome, idx) => {
+          pessoasCriadas.push({
+            id: 'p_foto_' + Date.now() + '_' + idx,
+            nome: nome.trim(),
+            cor: cores[idx % cores.length],
+            ordem: idx,
+          });
+        });
+      } else {
+        pessoasCriadas.push({
+          id: 'p_foto_' + Date.now() + '_0',
+          nome: 'Geral',
+          cor: '#059669',
+          ordem: 0,
+        });
+      }
+
+      // Organiza as linhas
+      const linhasConferencia: LinhaConferenciaOCR[] = (ocr.linhas || []).map((l, idx) => {
+        let idPessoaDestino = pessoasCriadas[0]?.id || 'geral';
+        if (l.pessoaSugerida) {
+          const match = pessoasCriadas.find((p) =>
+            p.nome.toLowerCase().includes(l.pessoaSugerida!.toLowerCase()) ||
+            l.pessoaSugerida!.toLowerCase().includes(p.nome.toLowerCase())
+          );
+          if (match) {
+            idPessoaDestino = match.id;
+          } else {
+            const novoId = 'p_foto_' + Date.now() + '_' + (pessoasCriadas.length + idx);
+            const novaPessoa: PessoaTab = {
+              id: novoId,
+              nome: l.pessoaSugerida.trim(),
+              cor: cores[pessoasCriadas.length % cores.length],
+              ordem: pessoasCriadas.length,
+            };
+            pessoasCriadas.push(novaPessoa);
+            idPessoaDestino = novoId;
+          }
+        }
+
+        return {
+          id: 'ocr_' + Date.now() + '_' + idx,
+          data: l.data || ocr.dataGeral || new Date().toISOString().slice(0, 10),
+          descricao: l.descricao || 'Item lido pela IA',
+          quantidade: l.quantidade || 1,
+          valorCentavos: l.valorCentavos || 0,
+          valorOriginalTexto: l.valorOriginalTexto,
+          tipoSugerido: (l.tipoSugerido as any) || 'saida',
+          categoria: l.categoria || 'Geral',
+          formaPagamento: (l.formaPagamento as any) || 'Pix',
+          pessoaId: idPessoaDestino,
+          pessoaSugeridaNome: l.pessoaSugerida,
+          confianca: (l.confianca as any) || 'alta',
+          loja: l.loja || ocr.estabelecimentoOuLoja,
+          dividaDeQuem: (l.dividaDeQuem as any) || 'eu_devo',
+          incluir: true,
+        };
+      });
+
+      setDadosConferenciaFoto({
+        imagemDataUrl: imagemProcessada.dataUrl,
+        imagemHash: imagemProcessada.hash,
+        nomeArquivo: file.name,
+        tamanhoBytes: imagemProcessada.tamanhoComprimidoBytes,
+        tipoDocumentoIdentificado: ocr.tipoDocumento || 'Folha de Acerto',
+        tituloSugerido: ocr.tituloSugeridoAcerto || 'Acerto ' + new Date().toLocaleDateString('pt-BR'),
+        pessoasIdentificadas: pessoasCriadas.map((p) => p.nome),
+        totalEscritoCentavos: ocr.totalEscritoNaAnotacaoCentavos || 0,
+        totalEscritoFormatado: ocr.totalEscritoFormatado,
+        observacoesOCR: ocr.observacoes,
+        linhasIniciais: linhasConferencia,
+      });
+    } catch (err: any) {
+      console.error(err);
+      alert('Aviso da Leitura com IA: ' + (err.message || 'Verifique a conexão e tente novamente.'));
+    } finally {
+      setIsProcessandoFoto(false);
+      setStatusProcessandoFoto('');
+    }
+  };
+
+  const handleConfirmarNovoAcertoPorFoto = async (dados: {
+    tituloAcerto?: string;
+    pessoasAtualizadas: PessoaTab[];
+    linhas: LinhaConferenciaOCR[];
+    imagemDataUrl: string;
+    imagemHash: string;
+    nomeArquivo: string;
+    tamanhoBytes: number;
+    tipoDocumento: string;
+    totalEscritoCentavos: number;
+    observacoes: string;
+  }) => {
+    if (onCriarAcertoPorFoto) {
+      await onCriarAcertoPorFoto({
+        titulo: dados.tituloAcerto || 'Acerto Organizado por Foto',
+        pessoas: dados.pessoasAtualizadas,
+        linhas: dados.linhas,
+        imagemDataUrl: dados.imagemDataUrl,
+        imagemHash: dados.imagemHash,
+        nomeArquivo: dados.nomeArquivo,
+        tamanhoBytes: dados.tamanhoBytes,
+        tipoDocumento: dados.tipoDocumento,
+        totalEscritoCentavos: dados.totalEscritoCentavos,
+        observacoes: dados.observacoes,
+      });
+      setDadosConferenciaFoto(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-16">
       
@@ -145,12 +313,25 @@ export const AcertosList: React.FC<AcertosListProps> = ({
               <span className="hidden sm:inline">Backup</span>
             </button>
 
+            {/* Organizar por Foto com IA */}
+            <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-bold shadow-md transition cursor-pointer">
+              <Camera className="w-4 h-4 text-emerald-200" />
+              <span>Organizar por Foto (IA)</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={isProcessandoFoto}
+                onChange={(e) => handleUploadFotoParaNovoAcerto(e.target.files)}
+              />
+            </label>
+
             <button
               onClick={() => setModalNovoAberto(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-white text-xs sm:text-sm font-bold shadow-sm transition cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Novo Acerto</span>
+              <span>Manual</span>
             </button>
           </div>
 
@@ -231,13 +412,27 @@ export const AcertosList: React.FC<AcertosListProps> = ({
                 ? 'Nenhum resultado corresponde aos filtros selecionados. Tente limpar os termos de busca.'
                 : 'Comece criando seu primeiro acerto para controlar despesas, adiantamentos e comprovantes com pessoas ou obras.'}
             </p>
-            <button
-              onClick={() => setModalNovoAberto(true)}
-              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Criar Primeiro Acerto</span>
-            </button>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <label className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 active:scale-95 text-white text-xs font-bold shadow-md transition cursor-pointer">
+                <Camera className="w-4 h-4 text-emerald-200" />
+                <span>📷 Organizar Acerto por Foto (IA)</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={isProcessandoFoto}
+                  onChange={(e) => handleUploadFotoParaNovoAcerto(e.target.files)}
+                />
+              </label>
+
+              <button
+                onClick={() => setModalNovoAberto(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold shadow-xs transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Criar Manualmente</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -452,6 +647,44 @@ export const AcertosList: React.FC<AcertosListProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* OVERLAY DE PROCESSAMENTO IA DE FOTO */}
+      {isProcessandoFoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 p-6 text-center shadow-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+            <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center justify-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-500" />
+              <span>Organizando Acerto com IA</span>
+            </h4>
+            <p className="text-xs text-slate-500">
+              {statusProcessandoFoto || 'Identificando pessoas, diárias, materiais, vales e valores...'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* TELA DE CONFERÊNCIA OBRIGATÓRIA PARA NOVO ACERTO POR FOTO */}
+      {dadosConferenciaFoto && (
+        <ConferenceModal
+          isOpen={true}
+          isCriandoNovoAcerto={true}
+          tituloSugerido={dadosConferenciaFoto.tituloSugerido}
+          pessoasIdentificadas={dadosConferenciaFoto.pessoasIdentificadas}
+          imagemDataUrl={dadosConferenciaFoto.imagemDataUrl}
+          imagemHash={dadosConferenciaFoto.imagemHash}
+          nomeArquivo={dadosConferenciaFoto.nomeArquivo}
+          tamanhoBytes={dadosConferenciaFoto.tamanhoBytes}
+          tipoDocumentoIdentificado={dadosConferenciaFoto.tipoDocumentoIdentificado}
+          totalEscritoCentavos={dadosConferenciaFoto.totalEscritoCentavos}
+          totalEscritoFormatado={dadosConferenciaFoto.totalEscritoFormatado}
+          observacoesOCR={dadosConferenciaFoto.observacoesOCR}
+          linhasIniciais={dadosConferenciaFoto.linhasIniciais}
+          isDuplicada={false}
+          onClose={() => setDadosConferenciaFoto(null)}
+          onConfirmar={handleConfirmarNovoAcertoPorFoto}
+        />
       )}
 
     </div>

@@ -49,11 +49,14 @@ app.post('/api/gemini/extract-receipt', async (req: Request, res: Response) => {
     // Strip data URL scheme prefix if present
     const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
 
-    const systemPrompt = `Você é o melhor contador e auditor financeiro pessoal e empresarial do Brasil.
-Sua especialidade é ler e conferir comprovantes de Pix, notas fiscais (NF-e, NFC-e, SAT), recibos manuais de papel, cadernos de anotação de obras, conversas e prints de WhatsApp com valores, tabelas de gastos e recibos de pagamento.
+    const systemPrompt = `Você é o melhor contador e auditor financeiro pessoal e de obras do Brasil.
+Sua especialidade é analisar fotos de cadernos de acertos de obras, anotações de despesas de equipes, comprovantes de Pix, notas fiscais, recibos manuais e tabelas manuscritas.
 
 INSTRUÇÕES RIGOROSAS:
-1. Extraia CADA LANÇAMENTO ou item individual legível na imagem.
+1. SE FOR UMA FOLHA DE ACERTO OU CADERNO COM VÁRIAS PESSOAS:
+   - Identifique o TÍTULO do acerto sugerido (ex: "Acerto Obra Casa 3", "Acerto Semanal Pedreiros", "Contas Outubro").
+   - Identifique TODAS AS PESSOAS ou fornecedores citados (ex: ["João", "Tiago", "Valdeci", "Loja do Pedro"]).
+   - Extraia CADA LINHA individual atribuindo ao nome da pessoa correspondente.
 2. NUNCA invente ou adivinhe valores. Se um número for ilegível, rasurado ou cortado, deixe 'valorCentavos' como 0 e marque 'confianca' como 'baixa'.
 3. 'valorCentavos' DEVE SER UM NÚMERO INTEIRO representando a quantia em centavos de Real:
    - R$ 150,00 => 15000
@@ -61,14 +64,14 @@ INSTRUÇÕES RIGOROSAS:
    - R$ 0,99 => 99
    - R$ 3.450,20 => 345020
 4. 'tipoSugerido' deve ser um destes:
-   - 'entrada': recebimento de dinheiro, pix recebido, pagamento de cliente.
+   - 'entrada': recebimento de dinheiro, pix recebido, adiantamento de cliente.
    - 'saida': gasto geral, combustível, refeição, diária paga, serviço.
    - 'adiantamento': adiantamento/vale entregue a um funcionário ou parceiro.
    - 'material': compra de materiais (cimento, areia, fios, tintas, parafusos, etc.) com loja, quantidade e valor unitário.
    - 'divida': conta pendente, fiado, boleto a pagar, promissória ou saldo em aberto.
 5. 'confianca' deve ser 'alta' (texto e números claros) ou 'baixa' (rasura, caligrafia difícil, dobra no papel, número incerto).
-6. Identifique se na imagem está escrito um TOTAL GERAL ou valor total do documento em 'totalEscritoNaAnotacaoCentavos'.
-7. Se for citado o nome de uma pessoa, verifique se corresponde a uma das pessoas conhecidas: ${knownPersons.join(', ') || 'nenhuma informada'}. Pessoa atual da aba: "${currentPerson || 'Geral'}".
+6. Identifique se na imagem está escrito um TOTAL GERAL ou soma final da folha em 'totalEscritoNaAnotacaoCentavos'.
+7. Pessoas conhecidas já cadastradas: ${knownPersons.join(', ') || 'nenhuma informada'}. Pessoa atual da aba: "${currentPerson || 'Geral'}".
 8. Forneça observações e resumo em português claro.`;
 
     const imagePart = {
@@ -79,7 +82,7 @@ INSTRUÇÕES RIGOROSAS:
     };
 
     const textPart = {
-      text: `Analise cuidadosamente esta imagem de comprovante/anotação financeira. Extraia todos os lançamentos em detalhes estruturados. Se for um comprovante Pix, identifique data/hora, valor total, pagador e recebedor. Se for caderno manuscrito, extraia cada linha com a descrição e o valor. Se houver total escrito pelo autor, extraia o total.`,
+      text: `Analise cuidadosamente esta foto de folha de acerto ou comprovante. Extraia o título sugerido do acerto, todas as pessoas citadas na folha para organizar as abas, e cada linha com pessoa correspondente, descrição, tipo e valor em centavos.`,
     };
 
     const response = await ai.models.generateContent({
@@ -93,7 +96,16 @@ INSTRUÇÕES RIGOROSAS:
           properties: {
             tipoDocumento: {
               type: Type.STRING,
-              description: 'Tipo do documento (ex: Comprovante Pix, Recibo Manuscrito, Cupom Fiscal, Caderno de Obras, Nota Fiscal, etc.)',
+              description: 'Tipo do documento (ex: Folha de Caderno de Acerto, Comprovante Pix, Cupom Fiscal, Recibo Manuscrito, etc.)',
+            },
+            tituloSugeridoAcerto: {
+              type: Type.STRING,
+              description: 'Título sugerido para o acerto identificado na folha',
+            },
+            todasPessoasIdentificadas: {
+              type: Type.ARRAY,
+              description: 'Lista com o nome de todas as pessoas, funcionários ou parceiros encontrados na folha',
+              items: { type: Type.STRING },
             },
             totalEscritoNaAnotacaoCentavos: {
               type: Type.INTEGER,
@@ -187,16 +199,44 @@ INSTRUÇÕES RIGOROSAS:
       },
     });
 
-    const responseText = response.text || '{}';
+    let responseText = response.text || '{}';
+    // Strip markdown code fences if present (e.g., ```json ... ``` or ``` ...)
+    responseText = responseText.replace(/```json\s*/gi, '').replace(/```\s*$/gi, '').trim();
+
     let parsedData;
     try {
       parsedData = JSON.parse(responseText);
-    } catch {
-      return res.status(500).json({
-        success: false,
-        error: 'Erro ao interpretar a resposta da IA como JSON.',
-        raw: responseText,
-      });
+    } catch (parseError) {
+      // Fallback: try finding first '{' and last '}'
+      const firstBrace = responseText.indexOf('{');
+      const lastBrace = responseText.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        try {
+          parsedData = JSON.parse(responseText.substring(firstBrace, lastBrace + 1));
+        } catch {
+          console.error('Failed to parse Gemini output:', responseText);
+          return res.status(500).json({
+            success: false,
+            error: 'Erro ao interpretar a resposta da IA. O formato recebido não é um JSON válido.',
+            raw: responseText.slice(0, 300),
+          });
+        }
+      } else {
+        console.error('Failed to parse Gemini output:', responseText);
+        return res.status(500).json({
+          success: false,
+          error: 'Erro ao interpretar a resposta da IA como JSON.',
+          raw: responseText.slice(0, 300),
+        });
+      }
+    }
+
+    // Ensure array fields exist
+    if (!parsedData.linhas) {
+      parsedData.linhas = [];
+    }
+    if (!parsedData.todasPessoasIdentificadas) {
+      parsedData.todasPessoasIdentificadas = [];
     }
 
     return res.json({

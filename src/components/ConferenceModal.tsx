@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Check, AlertTriangle, AlertCircle, Plus, Trash2, ZoomIn, ZoomOut, RotateCcw, 
-  ArrowRightLeft, FileText, Calendar, DollarSign, Tag, User, Layers, Info
+  ArrowRightLeft, FileText, Calendar, DollarSign, Tag, User, Layers, Info, Sparkles, UserPlus
 } from 'lucide-react';
 import { Acerto, PessoaTab, LinhaConferenciaOCR, TipoLancamento, FormaPagamento, DirecaoDivida } from '../types';
 import { formatarCentavos, parseValorParaCentavos, formatarCentavosSemSimbolo } from '../utils/currency';
@@ -9,8 +9,11 @@ import { formatarCentavos, parseValorParaCentavos, formatarCentavosSemSimbolo } 
 interface ConferenceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  acerto: Acerto;
-  pessoaAtualId: string;
+  acerto?: Acerto | null;
+  isCriandoNovoAcerto?: boolean;
+  tituloSugerido?: string;
+  pessoasIdentificadas?: string[];
+  pessoaAtualId?: string;
   imagemDataUrl: string;
   imagemHash: string;
   nomeArquivo: string;
@@ -22,6 +25,8 @@ interface ConferenceModalProps {
   linhasIniciais: LinhaConferenciaOCR[];
   isDuplicada: boolean;
   onConfirmar: (dadosConfirmados: {
+    tituloAcerto?: string;
+    pessoasAtualizadas: PessoaTab[];
     linhas: LinhaConferenciaOCR[];
     imagemDataUrl: string;
     imagemHash: string;
@@ -37,7 +42,10 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   isOpen,
   onClose,
   acerto,
-  pessoaAtualId,
+  isCriandoNovoAcerto = false,
+  tituloSugerido = 'Acerto Organizado por Foto',
+  pessoasIdentificadas = [],
+  pessoaAtualId = '',
   imagemDataUrl,
   imagemHash,
   nomeArquivo,
@@ -50,11 +58,63 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   isDuplicada,
   onConfirmar,
 }) => {
-  const [linhas, setLinhas] = useState<LinhaConferenciaOCR[]>(linhasIniciais);
+  const [titulo, setTitulo] = useState(tituloSugerido || 'Acerto Organizado por Foto');
   const [zoom, setZoom] = useState(1);
   const [isSalvando, setIsSalvando] = useState(false);
   const [observacoes, setObservacoes] = useState(observacoesOCR);
   const [tipoDoc, setTipoDoc] = useState(tipoDocumentoIdentificado);
+
+  // Lista de pessoas com suporte a criação automática
+  const [pessoas, setPessoas] = useState<PessoaTab[]>(() => {
+    const cores = ['#059669', '#0284c7', '#7c3aed', '#d97706', '#dc2626', '#4f46e5', '#0d9488'];
+    const basePessoas: PessoaTab[] = acerto?.pessoas ? [...acerto.pessoas] : [];
+
+    // Adiciona pessoas identificadas na foto que ainda não existem
+    for (const nomeIdentificado of pessoasIdentificadas) {
+      const nomeLimpo = nomeIdentificado.trim();
+      if (!nomeLimpo) continue;
+      const existe = basePessoas.some((p) => p.nome.toLowerCase() === nomeLimpo.toLowerCase());
+      if (!existe) {
+        basePessoas.push({
+          id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          nome: nomeLimpo,
+          cor: cores[basePessoas.length % cores.length],
+          ordem: basePessoas.length,
+        });
+      }
+    }
+
+    if (basePessoas.length === 0) {
+      basePessoas.push({
+        id: 'p_' + Date.now() + '_1',
+        nome: 'Geral',
+        cor: '#059669',
+        ordem: 0,
+      });
+    }
+
+    return basePessoas;
+  });
+
+  // Linhas com associação inteligente de pessoas
+  const [linhas, setLinhas] = useState<LinhaConferenciaOCR[]>(() => {
+    return linhasIniciais.map((l) => {
+      // Se a linha tem pessoa sugerida, busca a pessoa correspondente na lista
+      if (l.pessoaSugeridaNome) {
+        const match = pessoas.find((p) =>
+          p.nome.toLowerCase().includes(l.pessoaSugeridaNome!.toLowerCase()) ||
+          l.pessoaSugeridaNome!.toLowerCase().includes(p.nome.toLowerCase())
+        );
+        if (match) {
+          return { ...l, pessoaId: match.id };
+        }
+      }
+      return l;
+    });
+  });
+
+  const [nomeNovaPessoaInput, setNomeNovaPessoaInput] = useState('');
+  const [mostrarInputNovaPessoa, setMostrarInputNovaPessoa] = useState(false);
 
   if (!isOpen) return null;
 
@@ -71,7 +131,6 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
       if (l.tipoSugerido === 'entrada') {
         entradas += v;
       } else {
-        // Saída, adiantamento, material
         saidas += v;
       }
     }
@@ -84,27 +143,15 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
     };
   }, [linhas]);
 
-  // Alerta de divergência entre o total escrito na nota e a soma das linhas
-  const temDivergenciaTotal = totalEscritoCentavos > 0 && Math.abs(totalEscritoCentavos - somaLidaCentavos) > 100; // tolerância R$ 1,00
+  const temDivergenciaTotal = totalEscritoCentavos > 0 && Math.abs(totalEscritoCentavos - somaLidaCentavos) > 100;
 
   // Atualizar campo de uma linha
   const atualizarLinha = (id: string, campo: keyof LinhaConferenciaOCR, valor: any) => {
     setLinhas((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const atualizado = { ...item, [campo]: valor };
-          // Se alterou quantidade e unitário de material, recalcular valorCentavos se coerente
-          if (campo === 'quantidade' && atualizado.valorCentavos) {
-            // mantém
-          }
-          return atualizado;
-        }
-        return item;
-      })
+      prev.map((item) => (item.id === id ? { ...item, [campo]: valor } : item))
     );
   };
 
-  // Alterar valor em centavos
   const atualizarValorLinha = (id: string, textoDigitado: string) => {
     const centavos = parseValorParaCentavos(textoDigitado);
     setLinhas((prev) =>
@@ -112,12 +159,10 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
     );
   };
 
-  // Remover linha
   const removerLinha = (id: string) => {
     setLinhas((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // Adicionar linha manual na conferência
   const adicionarLinha = () => {
     const nova: LinhaConferenciaOCR = {
       id: 'nova_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -127,11 +172,27 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
       valorCentavos: 0,
       tipoSugerido: 'saida',
       categoria: 'Outros',
-      pessoaId: pessoaAtualId,
+      pessoaId: pessoas[0]?.id || 'geral',
       confianca: 'alta',
       incluir: true,
     };
     setLinhas((prev) => [...prev, nova]);
+  };
+
+  // Adicionar uma nova pessoa rapidamente
+  const handleCriarNovaPessoa = (nome: string) => {
+    const limpo = nome.trim();
+    if (!limpo) return;
+    const cores = ['#059669', '#0284c7', '#7c3aed', '#d97706', '#dc2626', '#4f46e5', '#0d9488'];
+    const novaP: PessoaTab = {
+      id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      nome: limpo,
+      cor: cores[pessoas.length % cores.length],
+      ordem: pessoas.length,
+    };
+    setPessoas((prev) => [...prev, novaP]);
+    setNomeNovaPessoaInput('');
+    setMostrarInputNovaPessoa(false);
   };
 
   const handleSalvar = async () => {
@@ -144,6 +205,8 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
     setIsSalvando(true);
     try {
       await onConfirmar({
+        tituloAcerto: titulo.trim(),
+        pessoasAtualizadas: pessoas,
         linhas: linhasValidas,
         imagemDataUrl,
         imagemHash,
@@ -155,7 +218,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
       });
       onClose();
     } catch (e: any) {
-      alert('Erro ao salvar lançamentos: ' + (e.message || 'Tente novamente.'));
+      alert('Erro ao salvar acerto: ' + (e.message || 'Tente novamente.'));
     } finally {
       setIsSalvando(false);
     }
@@ -163,58 +226,125 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
-      <div className="relative flex flex-col w-full max-w-6xl max-h-[95vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div className="relative flex flex-col w-full max-w-6xl max-h-[96vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         
-        {/* TOPO: Cabeçalho da Conferência */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
-          <div>
+        {/* TOPO: Cabeçalho com Título do Acerto Editável se for novo */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 gap-2">
+          <div className="flex-1">
             <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                Conferência Inteligente de Comprovante
+              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                {isCriandoNovoAcerto ? '✨ Organizar Todo o Acerto por Foto' : 'Conferência Inteligente do Acerto'}
               </h2>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {nomeArquivo} • {tipoDoc} • Confirme os dados lidos pela IA antes de salvar
-            </p>
+            
+            {isCriandoNovoAcerto ? (
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500">Título do Acerto:</span>
+                <input
+                  type="text"
+                  value={titulo}
+                  onChange={(e) => setTitulo(e.target.value)}
+                  className="px-2 py-0.5 text-xs sm:text-sm font-bold rounded-lg border border-emerald-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  placeholder="Nome do acerto ou obra..."
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {nomeArquivo} • {tipoDoc} • Confirme os dados lidos pela IA antes de salvar
+              </p>
+            )}
           </div>
 
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+            className="self-end sm:self-auto rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {/* BARRA DAS PESSOAS / ABAS DETECTADAS */}
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-2 bg-emerald-50/70 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800/50 text-xs">
+          <div className="flex items-center gap-1.5 font-bold text-emerald-800 dark:text-emerald-300">
+            <Sparkles className="w-4 h-4 text-emerald-600" />
+            <span>Abas / Pessoas Identificadas ({pessoas.length}):</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {pessoas.map((p) => (
+              <span
+                key={p.id}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold text-white shadow-2xs"
+                style={{ backgroundColor: p.cor || '#059669' }}
+              >
+                {p.nome}
+              </span>
+            ))}
+
+            {mostrarInputNovaPessoa ? (
+              <div className="inline-flex items-center gap-1">
+                <input
+                  type="text"
+                  value={nomeNovaPessoaInput}
+                  onChange={(e) => setNomeNovaPessoaInput(e.target.value)}
+                  placeholder="Nome da pessoa..."
+                  className="px-2 py-0.5 text-xs rounded-md border border-emerald-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  autoFocus
+                />
+                <button
+                  onClick={() => handleCriarNovaPessoa(nomeNovaPessoaInput)}
+                  className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-xs font-bold"
+                >
+                  OK
+                </button>
+                <button
+                  onClick={() => setMostrarInputNovaPessoa(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMostrarInputNovaPessoa(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-emerald-400 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-xs font-semibold cursor-pointer"
+              >
+                <Plus className="w-3 h-3" />
+                <span>+ Outra Pessoa</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* ALERTAS NO TOPO SE HOUVER DUPLICIDADE OU DIVERGÊNCIA */}
         {(isDuplicada || temDivergenciaTotal) && (
-          <div className="flex flex-col gap-1.5 px-4 sm:px-6 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/60 text-xs">
+          <div className="flex flex-col gap-1 px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/60 text-xs">
             {isDuplicada && (
               <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span><strong>Atenção: Imagem Já Cadastrada!</strong> Este comprovante já foi enviado anteriormente para este acerto. Verifique se não está duplicando o lançamento.</span>
+                <span><strong>Atenção: Imagem Já Cadastrada!</strong> Este comprovante já foi enviado anteriormente. Verifique se não está duplicando lançamentos.</span>
               </div>
             )}
             {temDivergenciaTotal && (
               <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
-                  <strong>Divergência de Totais:</strong> O valor total escrito na nota/anotação é <strong>{formatarCentavos(totalEscritoCentavos)}</strong>, mas a soma dos itens lidos é <strong>{formatarCentavos(somaLidaCentavos)}</strong>. Confira cada linha ao lado.
+                  <strong>Divergência de Totais:</strong> O valor total escrito na nota/anotação é <strong>{formatarCentavos(totalEscritoCentavos)}</strong>, mas a soma dos itens lidos é <strong>{formatarCentavos(somaLidaCentavos)}</strong>.
                 </span>
               </div>
             )}
           </div>
         )}
 
-        {/* CORPO: DIVISÃO EM DUAS COLUNAS (IMAGEM X TABELA EDITÁVEL) */}
+        {/* CORPO: DUAS COLUNAS (FOTO COM ZOOM X TABELA EDITÁVEL) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-hidden min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
           
           {/* COLUNA ESQUERDA: VISUALIZADOR DA IMAGEM COM ZOOM */}
           <div className="lg:col-span-5 flex flex-col bg-slate-900 overflow-hidden min-h-[260px] lg:min-h-[460px]">
-            {/* Controles de Zoom */}
             <div className="flex items-center justify-between px-3 py-2 bg-slate-950/80 text-white text-xs border-b border-slate-800">
-              <span className="text-slate-400">Visualização do Comprovante</span>
+              <span className="text-slate-400">Visualização da Folha / Foto</span>
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))}
@@ -241,7 +371,6 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
               </div>
             </div>
 
-            {/* Área com Scroll e Zoom */}
             <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-950/40 select-none">
               <img
                 src={imagemDataUrl}
@@ -253,7 +382,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
 
             {totalEscritoFormatado && (
               <div className="px-3 py-2 bg-slate-950 text-slate-300 text-xs border-t border-slate-800 flex justify-between items-center">
-                <span>Total identificado na nota:</span>
+                <span>Total identificado na nota/folha:</span>
                 <span className="font-bold text-emerald-400">{totalEscritoFormatado}</span>
               </div>
             )}
@@ -262,17 +391,16 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
           {/* COLUNA DIREITA: TABELA EDITÁVEL DOS LANÇAMENTOS EXTRAÍDOS */}
           <div className="lg:col-span-7 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
             
-            {/* Barra de Ações da Tabela */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800 text-xs">
               <span className="font-semibold text-slate-700 dark:text-slate-300">
-                Itens Extraídos ({linhas.length})
+                Lançamentos Organizados ({linhas.length})
               </span>
               <button
                 onClick={adicionarLinha}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Adicionar Linha</span>
+                <span>+ Adicionar Linha</span>
               </button>
             </div>
 
@@ -281,7 +409,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
               {linhas.length === 0 ? (
                 <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400">
                   <FileText className="w-10 h-10 mb-2 stroke-1" />
-                  <p className="text-sm font-medium">Nenhum lançamento extraído automaticamente.</p>
+                  <p className="text-sm font-medium">Nenhum lançamento identificado.</p>
                   <button
                     onClick={adicionarLinha}
                     className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
@@ -290,9 +418,9 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                   </button>
                 </div>
               ) : (
-                linhas.map((linha, index) => {
+                linhas.map((linha) => {
                   const isBaixaConfianca = linha.confianca === 'baixa';
-                  const pessoaAtualLinha = acerto.pessoas.find((p) => p.id === linha.pessoaId);
+                  const pessoaDaLinha = pessoas.find((p) => p.id === linha.pessoaId);
 
                   return (
                     <div
@@ -305,7 +433,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                           : 'bg-white border-slate-200 dark:bg-slate-800/60 dark:border-slate-700 shadow-2xs'
                       }`}
                     >
-                      {/* Linha 1: Checkbox incluir, Descrição, Valor e Exclusão */}
+                      {/* Linha 1: Checkbox, Descrição, Valor e Exclusão */}
                       <div className="flex items-start gap-2">
                         <input
                           type="checkbox"
@@ -315,18 +443,16 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                           title="Marque para incluir este lançamento"
                         />
 
-                        {/* Descrição */}
                         <div className="flex-1">
                           <input
                             type="text"
                             value={linha.descricao}
                             onChange={(e) => atualizarLinha(linha.id, 'descricao', e.target.value)}
-                            placeholder="Descrição do item ou serviço..."
+                            placeholder="Descrição do item ou adiantamento..."
                             className="w-full text-xs sm:text-sm font-medium px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                           />
                         </div>
 
-                        {/* Valor monetário */}
                         <div className="w-28 sm:w-32">
                           <div className="relative">
                             <span className="absolute left-2 top-2 text-[11px] font-bold text-slate-400">R$</span>
@@ -342,41 +468,25 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
 
                         <button
                           onClick={() => removerLinha(linha.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                           title="Excluir este item"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
 
-                      {/* Linha 2: Configurações de Tipo, Categoria, Pessoa e Data */}
+                      {/* Linha 2: Pessoa (Aba), Tipo (Sub-aba), Categoria e Data */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
                         
-                        {/* Tipo (Sub-aba) */}
-                        <div>
-                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Seção / Tipo</label>
-                          <select
-                            value={linha.tipoSugerido}
-                            onChange={(e) => atualizarLinha(linha.id, 'tipoSugerido', e.target.value as TipoLancamento)}
-                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
-                          >
-                            <option value="saida">Saída / Gasto</option>
-                            <option value="entrada">Entrada</option>
-                            <option value="adiantamento">Adiantamento</option>
-                            <option value="material">Material</option>
-                            <option value="divida">Dívida</option>
-                          </select>
-                        </div>
-
                         {/* Pessoa (Aba de destino) */}
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Pessoa (Aba)</label>
                           <select
                             value={linha.pessoaId}
                             onChange={(e) => atualizarLinha(linha.id, 'pessoaId', e.target.value)}
-                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold"
                           >
-                            {acerto.pessoas.map((p) => (
+                            {pessoas.map((p) => (
                               <option key={p.id} value={p.id}>
                                 {p.nome}
                               </option>
@@ -384,18 +494,31 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                           </select>
                         </div>
 
+                        {/* Tipo (Sub-aba) */}
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Tipo / Seção</label>
+                          <select
+                            value={linha.tipoSugerido}
+                            onChange={(e) => atualizarLinha(linha.id, 'tipoSugerido', e.target.value as TipoLancamento)}
+                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-semibold"
+                          >
+                            <option value="adiantamento">Adiantamento / Vale</option>
+                            <option value="saida">Saída / Despesa</option>
+                            <option value="material">Material</option>
+                            <option value="entrada">Entrada</option>
+                            <option value="divida">Dívida</option>
+                          </select>
+                        </div>
+
                         {/* Categoria */}
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Categoria</label>
-                          <select
+                          <input
+                            type="text"
                             value={linha.categoria || 'Geral'}
                             onChange={(e) => atualizarLinha(linha.id, 'categoria', e.target.value)}
                             className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
-                          >
-                            {acerto.categorias.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
+                          />
                         </div>
 
                         {/* Data */}
@@ -410,37 +533,18 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Notificação se a IA sugeriu mover para outra pessoa */}
-                      {linha.pessoaSugeridaNome && linha.pessoaSugeridaNome !== pessoaAtualLinha?.nome && (
-                        <div className="flex items-center justify-between mt-2 px-2 py-1 rounded bg-blue-50 dark:bg-blue-950/40 text-[11px] text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                          <div className="flex items-center gap-1.5">
-                            <Info className="w-3 h-3 shrink-0" />
-                            <span>Mencionou <strong>{linha.pessoaSugeridaNome}</strong> na imagem.</span>
-                          </div>
-                          {(() => {
-                            const pessoaEncontrada = acerto.pessoas.find(
-                              (p) => p.nome.toLowerCase().includes(linha.pessoaSugeridaNome!.toLowerCase())
-                            );
-                            if (pessoaEncontrada && pessoaEncontrada.id !== linha.pessoaId) {
-                              return (
-                                <button
-                                  onClick={() => atualizarLinha(linha.id, 'pessoaId', pessoaEncontrada.id)}
-                                  className="text-xs font-bold text-blue-600 dark:text-blue-400 underline cursor-pointer"
-                                >
-                                  Mover para {pessoaEncontrada.nome}
-                                </button>
-                              );
-                            }
-                            return null;
-                          })()}
+                      {/* Notificação se a IA identificou a pessoa específica */}
+                      {linha.pessoaSugeridaNome && (
+                        <div className="flex items-center gap-1.5 mt-2 px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-[11px] text-slate-600 dark:text-slate-300">
+                          <Info className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span>Identificado na foto para: <strong>{linha.pessoaSugeridaNome}</strong> (Alocado na aba: <strong>{pessoaDaLinha?.nome || 'Geral'}</strong>)</span>
                         </div>
                       )}
 
-                      {/* Alerta de baixa confiança */}
                       {isBaixaConfianca && (
                         <div className="flex items-center gap-1 mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                          <AlertTriangle className="w-3 h-3" />
-                          <span>Confiança baixa da IA (texto ilegível ou rasurado). Confira o valor antes de confirmar.</span>
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          <span>Confiança baixa da IA (texto com rasura ou corte). Verifique o valor.</span>
                         </div>
                       )}
                     </div>
@@ -457,7 +561,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                   <span className="font-bold text-emerald-700 dark:text-emerald-300">{formatarCentavos(totalEntradas)}</span>
                 </div>
                 <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800">
-                  <span className="block text-[10px] text-rose-600 dark:text-rose-400 uppercase">Saídas/Materiais</span>
+                  <span className="block text-[10px] text-rose-600 dark:text-rose-400 uppercase">Saídas/Adiantamentos</span>
                   <span className="font-bold text-rose-700 dark:text-rose-300">{formatarCentavos(totalSaidas)}</span>
                 </div>
                 <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
@@ -481,14 +585,14 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                   type="button"
                   onClick={handleSalvar}
                   disabled={isSalvando || linhas.length === 0}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
                   {isSalvando ? (
-                    <span className="animate-spin">⏳ Salvando...</span>
+                    <span className="animate-spin">⏳ Salvando e organizando...</span>
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>Confirmar e Lançar ({linhas.filter((l) => l.incluir).length})</span>
+                      <span>{isCriandoNovoAcerto ? 'Criar Acerto Completo Organizado' : `Confirmar e Lançar (${linhas.filter((l) => l.incluir).length})`}</span>
                     </>
                   )}
                 </button>
