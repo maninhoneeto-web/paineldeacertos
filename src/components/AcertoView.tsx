@@ -73,6 +73,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
     tipoDocumentoIdentificado?: string;
     tituloSugerido?: string;
     pessoasIdentificadas?: string[];
+    pessoasIniciais?: PessoaTab[];
     totalEscritoCentavos?: number;
     totalEscritoFormatado?: string;
     observacoesOCR?: string;
@@ -164,14 +165,43 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
         currentPerson: pessoaAtual,
       });
 
+      const cores = ['#059669', '#0284c7', '#7c3aed', '#d97706', '#dc2626', '#4f46e5', '#0d9488'];
+      const pessoasAtualizadas: PessoaTab[] = [...acerto.pessoas];
+
+      // Adiciona quaisquer novas pessoas identificadas pela IA na folha/foto
+      (ocr.todasPessoasIdentificadas || []).forEach((nome) => {
+        const nomeTrim = nome.trim();
+        if (nomeTrim && !pessoasAtualizadas.some((p) => p.nome.toLowerCase() === nomeTrim.toLowerCase())) {
+          pessoasAtualizadas.push({
+            id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            nome: nomeTrim,
+            cor: cores[pessoasAtualizadas.length % cores.length],
+            ordem: pessoasAtualizadas.length,
+          });
+        }
+      });
+
       // Monta as linhas para a tela de conferência
       const linhasConferencia: LinhaConferenciaOCR[] = (ocr.linhas || []).map((l, idx) => {
-        let idPessoaDestino = abaAtiva !== 'geral' ? abaAtiva : acerto.pessoas[0]?.id || 'geral';
+        let idPessoaDestino = abaAtiva !== 'geral' ? abaAtiva : pessoasAtualizadas[0]?.id || 'geral';
         if (l.pessoaSugerida) {
-          const match = acerto.pessoas.find((p) =>
-            p.nome.toLowerCase().includes(l.pessoaSugerida!.toLowerCase())
+          const match = pessoasAtualizadas.find((p) =>
+            p.nome.toLowerCase().includes(l.pessoaSugerida!.toLowerCase()) ||
+            l.pessoaSugerida!.toLowerCase().includes(p.nome.toLowerCase())
           );
-          if (match) idPessoaDestino = match.id;
+          if (match) {
+            idPessoaDestino = match.id;
+          } else {
+            // Se a linha cita alguém novo que ainda não está na lista, cria
+            const novoId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            pessoasAtualizadas.push({
+              id: novoId,
+              nome: l.pessoaSugerida.trim(),
+              cor: cores[pessoasAtualizadas.length % cores.length],
+              ordem: pessoasAtualizadas.length,
+            });
+            idPessoaDestino = novoId;
+          }
         }
 
         return {
@@ -200,7 +230,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
         tamanhoBytes: imagemProcessada.tamanhoComprimidoBytes,
         tipoDocumentoIdentificado: ocr.tipoDocumento,
         tituloSugerido: ocr.tituloSugeridoAcerto,
-        pessoasIdentificadas: ocr.todasPessoasIdentificadas || [],
+        pessoasIdentificadas: pessoasAtualizadas.map((p) => p.nome),
+        pessoasIniciais: pessoasAtualizadas,
         totalEscritoCentavos: ocr.totalEscritoNaAnotacaoCentavos || 0,
         totalEscritoFormatado: ocr.totalEscritoFormatado,
         observacoesOCR: ocr.observacoes,
@@ -229,8 +260,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
     totalEscritoCentavos: number;
     observacoes: string;
   }) => {
-    // Se novas pessoas foram criadas na conferência, atualiza o acerto
-    if (dados.pessoasAtualizadas && dados.pessoasAtualizadas.length !== acerto.pessoas.length) {
+    // Se pessoas foram criadas ou atualizadas na conferência, atualiza o acerto
+    if (dados.pessoasAtualizadas && dados.pessoasAtualizadas.length > 0) {
       const acertoComPessoas: Acerto = {
         ...acerto,
         pessoas: dados.pessoasAtualizadas,
@@ -519,6 +550,22 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             {/* PWA Install */}
             <PWAInstallButton />
 
+            {/* Ler Foto com IA */}
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 active:scale-95 text-white text-xs font-bold shadow-xs transition cursor-pointer">
+              <Camera className="w-4 h-4 text-emerald-200" />
+              <span>{isProcessandoImagem ? 'Lendo...' : 'Ler Foto (IA)'}</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={isProcessandoImagem}
+                onChange={(e) => {
+                  handleUploadImagens(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+
             {/* Agente Financeiro */}
             <button
               onClick={() => setModalAgenteAberto(true)}
@@ -699,6 +746,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
           acerto={acerto}
           tituloSugerido={dadosConferencia.tituloSugerido}
           pessoasIdentificadas={dadosConferencia.pessoasIdentificadas}
+          pessoasIniciais={dadosConferencia.pessoasIniciais}
           pessoaAtualId={abaAtiva !== 'geral' ? abaAtiva : acerto.pessoas[0]?.id || 'geral'}
           imagemDataUrl={dadosConferencia.imagemDataUrl}
           imagemHash={dadosConferencia.imagemHash}

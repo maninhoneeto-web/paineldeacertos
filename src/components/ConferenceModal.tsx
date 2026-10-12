@@ -13,6 +13,7 @@ interface ConferenceModalProps {
   isCriandoNovoAcerto?: boolean;
   tituloSugerido?: string;
   pessoasIdentificadas?: string[];
+  pessoasIniciais?: PessoaTab[];
   pessoaAtualId?: string;
   imagemDataUrl: string;
   imagemHash: string;
@@ -45,6 +46,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   isCriandoNovoAcerto = false,
   tituloSugerido = 'Acerto Organizado por Foto',
   pessoasIdentificadas = [],
+  pessoasIniciais,
   pessoaAtualId = '',
   imagemDataUrl,
   imagemHash,
@@ -64,8 +66,12 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   const [observacoes, setObservacoes] = useState(observacoesOCR);
   const [tipoDoc, setTipoDoc] = useState(tipoDocumentoIdentificado);
 
-  // Lista de pessoas com suporte a criação automática
+  // Lista de pessoas com suporte a criação automática mantendo IDs consistentes
   const [pessoas, setPessoas] = useState<PessoaTab[]>(() => {
+    if (pessoasIniciais && pessoasIniciais.length > 0) {
+      return [...pessoasIniciais];
+    }
+
     const cores = ['#059669', '#0284c7', '#7c3aed', '#d97706', '#dc2626', '#4f46e5', '#0d9488'];
     const basePessoas: PessoaTab[] = acerto?.pessoas ? [...acerto.pessoas] : [];
 
@@ -96,20 +102,32 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
     return basePessoas;
   });
 
-  // Linhas com associação inteligente de pessoas
+  // Linhas com associação inteligente de pessoas aos IDs reais
   const [linhas, setLinhas] = useState<LinhaConferenciaOCR[]>(() => {
-    return linhasIniciais.map((l) => {
-      // Se a linha tem pessoa sugerida, busca a pessoa correspondente na lista
+    return (linhasIniciais || []).map((l) => {
+      // 1. Se o ID já bate com uma pessoa existente, mantém
+      const matchId = pessoas.find((p) => p.id === l.pessoaId);
+      if (matchId) {
+        return l;
+      }
+
+      // 2. Tenta associar pelo nome sugerido da pessoa na linha
       if (l.pessoaSugeridaNome) {
-        const match = pessoas.find((p) =>
+        const matchNome = pessoas.find((p) =>
           p.nome.toLowerCase().includes(l.pessoaSugeridaNome!.toLowerCase()) ||
           l.pessoaSugeridaNome!.toLowerCase().includes(p.nome.toLowerCase())
         );
-        if (match) {
-          return { ...l, pessoaId: match.id };
+        if (matchNome) {
+          return { ...l, pessoaId: matchNome.id };
         }
       }
-      return l;
+
+      // 3. Fallback seguro para primeira pessoa ou pessoaAtualId
+      const fallbackId = (pessoaAtualId && pessoas.some(p => p.id === pessoaAtualId))
+        ? pessoaAtualId
+        : pessoas[0]?.id || 'geral';
+
+      return { ...l, pessoaId: fallbackId };
     });
   });
 

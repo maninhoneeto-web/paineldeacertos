@@ -66,7 +66,10 @@ export const TabGeral: React.FC<TabGeralProps> = ({
                     accept="image/*"
                     className="hidden"
                     disabled={isEnviandoImagem}
-                    onChange={(e) => onUploadImagem(e.target.files)}
+                    onChange={(e) => {
+                      onUploadImagem(e.target.files);
+                      e.target.value = '';
+                    }}
                   />
                 </label>
               )}

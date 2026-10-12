@@ -24,7 +24,7 @@ export async function calcularHashImagem(buffer: ArrayBuffer): Promise<string> {
 /**
  * Reduz a imagem proporcionalmente mantendo resolução ideal para leitura de OCR manuscrito
  */
-export async function comprimirImagem(file: File, maxDimensao = 1200, qualidade = 0.8): Promise<ImagemProcessada> {
+export async function comprimirImagem(file: File, maxDimensao = 1600, qualidade = 0.85): Promise<ImagemProcessada> {
   const arrayBuffer = await file.arrayBuffer();
   const hash = await calcularHashImagem(arrayBuffer);
 
@@ -54,7 +54,7 @@ export async function comprimirImagem(file: File, maxDimensao = 1200, qualidade 
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          reject(new Error('Não foi possível obter contexto 2D do Canvas.'));
+          reject(new Error('Não foi possível obter contexto do Canvas para processar a foto.'));
           return;
         }
 
@@ -79,11 +79,11 @@ export async function comprimirImagem(file: File, maxDimensao = 1200, qualidade 
         });
       };
 
-      img.onerror = () => reject(new Error('Erro ao carregar a imagem para compressão.'));
+      img.onerror = () => reject(new Error('Não foi possível carregar a imagem. Se estiver usando iPhone (.heic), selecione formato JPEG/PNG ou faça uma captura de tela da folha.'));
       img.src = e.target?.result as string;
     };
 
-    reader.onerror = () => reject(new Error('Erro ao ler arquivo da imagem.'));
+    reader.onerror = () => reject(new Error('Erro ao ler os dados do arquivo da foto.'));
     reader.readAsDataURL(file);
   });
 }

@@ -46,8 +46,14 @@ app.post('/api/gemini/extract-receipt', async (req: Request, res: Response) => {
       });
     }
 
-    // Strip data URL scheme prefix if present
-    const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+    // Strip data URL scheme prefix if present and detect mimeType
+    let cleanBase64 = imageBase64;
+    let detectedMime = mimeType || 'image/jpeg';
+    const matchMime = imageBase64.match(/^data:([^;]+);base64,/);
+    if (matchMime) {
+      detectedMime = matchMime[1];
+      cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+    }
 
     const systemPrompt = `Você é o melhor contador e auditor financeiro pessoal e de obras do Brasil.
 Sua especialidade é analisar fotos de cadernos de acertos de obras, anotações de despesas de equipes, comprovantes de Pix, notas fiscais, recibos manuais e tabelas manuscritas.
@@ -56,7 +62,7 @@ INSTRUÇÕES RIGOROSAS:
 1. SE FOR UMA FOLHA DE ACERTO OU CADERNO COM VÁRIAS PESSOAS:
    - Identifique o TÍTULO do acerto sugerido (ex: "Acerto Obra Casa 3", "Acerto Semanal Pedreiros", "Contas Outubro").
    - Identifique TODAS AS PESSOAS ou fornecedores citados (ex: ["João", "Tiago", "Valdeci", "Loja do Pedro"]).
-   - Extraia CADA LINHA individual atribuindo ao nome da pessoa correspondente.
+   - Extraia CADA LINHA individual atribuindo ao nome da pessoa correspondente ('pessoaSugerida').
 2. NUNCA invente ou adivinhe valores. Se um número for ilegível, rasurado ou cortado, deixe 'valorCentavos' como 0 e marque 'confianca' como 'baixa'.
 3. 'valorCentavos' DEVE SER UM NÚMERO INTEIRO representando a quantia em centavos de Real:
    - R$ 150,00 => 15000
@@ -64,7 +70,7 @@ INSTRUÇÕES RIGOROSAS:
    - R$ 0,99 => 99
    - R$ 3.450,20 => 345020
 4. 'tipoSugerido' deve ser um destes:
-   - 'entrada': recebimento de dinheiro, pix recebido, adiantamento de cliente.
+   - 'entrada': recebimento de dinheiro, pix recebido, adiantamento de cliente, receita.
    - 'saida': gasto geral, combustível, refeição, diária paga, serviço.
    - 'adiantamento': adiantamento/vale entregue a um funcionário ou parceiro.
    - 'material': compra de materiais (cimento, areia, fios, tintas, parafusos, etc.) com loja, quantidade e valor unitário.
@@ -76,7 +82,7 @@ INSTRUÇÕES RIGOROSAS:
 
     const imagePart = {
       inlineData: {
-        mimeType: mimeType || 'image/jpeg',
+        mimeType: detectedMime,
         data: cleanBase64,
       },
     };
@@ -85,119 +91,136 @@ INSTRUÇÕES RIGOROSAS:
       text: `Analise cuidadosamente esta foto de folha de acerto ou comprovante. Extraia o título sugerido do acerto, todas as pessoas citadas na folha para organizar as abas, e cada linha com pessoa correspondente, descrição, tipo e valor em centavos.`,
     };
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: { parts: [imagePart, textPart] },
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            tipoDocumento: {
-              type: Type.STRING,
-              description: 'Tipo do documento (ex: Folha de Caderno de Acerto, Comprovante Pix, Cupom Fiscal, Recibo Manuscrito, etc.)',
-            },
-            tituloSugeridoAcerto: {
-              type: Type.STRING,
-              description: 'Título sugerido para o acerto identificado na folha',
-            },
-            todasPessoasIdentificadas: {
-              type: Type.ARRAY,
-              description: 'Lista com o nome de todas as pessoas, funcionários ou parceiros encontrados na folha',
-              items: { type: Type.STRING },
-            },
-            totalEscritoNaAnotacaoCentavos: {
-              type: Type.INTEGER,
-              description: 'Total geral escrito explicitamente no documento em centavos (ou 0 se não houver soma explícita)',
-            },
-            totalEscritoFormatado: {
-              type: Type.STRING,
-              description: 'Texto exato do total escrito (ex: "R$ 450,00")',
-            },
-            estabelecimentoOuLoja: {
-              type: Type.STRING,
-              description: 'Nome da loja, banco ou estabelecimento identificado',
-            },
-            dataGeral: {
-              type: Type.STRING,
-              description: 'Data geral do documento no formato YYYY-MM-DD',
-            },
-            pessoaSugeridaGeral: {
-              type: Type.STRING,
-              description: 'Nome da pessoa mencionada no documento (pagador, beneficiário, cliente, etc.)',
-            },
-            observacoes: {
-              type: Type.STRING,
-              description: 'Observações, avisos de rasura ou resumo da leitura contábil',
-            },
-            linhas: {
-              type: Type.ARRAY,
-              description: 'Lista de todos os lançamentos ou itens extraídos da imagem',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  data: {
-                    type: Type.STRING,
-                    description: 'Data do item no formato YYYY-MM-DD',
-                  },
-                  descricao: {
-                    type: Type.STRING,
-                    description: 'Descrição detalhada do item ou transação',
-                  },
-                  quantidade: {
-                    type: Type.NUMBER,
-                    description: 'Quantidade (padrão 1 se não especificado)',
-                  },
-                  valorUnitarioCentavos: {
-                    type: Type.INTEGER,
-                    description: 'Valor unitário em centavos',
-                  },
-                  valorCentavos: {
-                    type: Type.INTEGER,
-                    description: 'Valor total da linha em centavos (número inteiro)',
-                  },
-                  valorOriginalTexto: {
-                    type: Type.STRING,
-                    description: 'Texto original do valor como visto na imagem',
-                  },
-                  tipoSugerido: {
-                    type: Type.STRING,
-                    description: 'Tipo: "entrada", "saida", "adiantamento", "material" ou "divida"',
-                  },
-                  categoria: {
-                    type: Type.STRING,
-                    description: 'Categoria financeira (ex: Mão de Obra, Materiais, Alimentação, Transporte, Pix, Adiantamento, Dívida, etc.)',
-                  },
-                  formaPagamento: {
-                    type: Type.STRING,
-                    description: 'Forma de pagamento (Pix, Dinheiro, Cartão, Transferência, Boleto, etc.)',
-                  },
-                  pessoaSugerida: {
-                    type: Type.STRING,
-                    description: 'Pessoa relacionada a esta linha',
-                  },
-                  confianca: {
-                    type: Type.STRING,
-                    description: '"alta" ou "baixa"',
-                  },
-                  loja: {
-                    type: Type.STRING,
-                    description: 'Nome da loja ou fornecedor se for material',
-                  },
-                  dividaDeQuem: {
-                    type: Type.STRING,
-                    description: 'Se tipo for divida: "eu_devo" ou "me_devem"',
-                  },
-                },
-                required: ['descricao', 'valorCentavos', 'tipoSugerido', 'confianca'],
+    const schemaConfig = {
+      type: Type.OBJECT,
+      properties: {
+        tipoDocumento: {
+          type: Type.STRING,
+          description: 'Tipo do documento (ex: Folha de Caderno de Acerto, Comprovante Pix, Cupom Fiscal, Recibo Manuscrito, etc.)',
+        },
+        tituloSugeridoAcerto: {
+          type: Type.STRING,
+          description: 'Título sugerido para o acerto identificado na folha',
+        },
+        todasPessoasIdentificadas: {
+          type: Type.ARRAY,
+          description: 'Lista com o nome de todas as pessoas, funcionários ou parceiros encontrados na folha',
+          items: { type: Type.STRING },
+        },
+        totalEscritoNaAnotacaoCentavos: {
+          type: Type.NUMBER,
+          description: 'Total geral escrito explicitamente no documento em centavos (ou 0 se não houver soma explícita)',
+        },
+        totalEscritoFormatado: {
+          type: Type.STRING,
+          description: 'Texto exato do total escrito (ex: "R$ 450,00")',
+        },
+        estabelecimentoOuLoja: {
+          type: Type.STRING,
+          description: 'Nome da loja, banco ou estabelecimento identificado',
+        },
+        dataGeral: {
+          type: Type.STRING,
+          description: 'Data geral do documento no formato YYYY-MM-DD',
+        },
+        pessoaSugeridaGeral: {
+          type: Type.STRING,
+          description: 'Nome da pessoa mencionada no documento (pagador, beneficiário, cliente, etc.)',
+        },
+        observacoes: {
+          type: Type.STRING,
+          description: 'Observações, avisos de rasura ou resumo da leitura contábil',
+        },
+        linhas: {
+          type: Type.ARRAY,
+          description: 'Lista de todos os lançamentos ou itens extraídos da imagem',
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              data: {
+                type: Type.STRING,
+                description: 'Data do item no formato YYYY-MM-DD',
+              },
+              descricao: {
+                type: Type.STRING,
+                description: 'Descrição detalhada do item ou transação',
+              },
+              quantidade: {
+                type: Type.NUMBER,
+                description: 'Quantidade (padrão 1 se não especificado)',
+              },
+              valorUnitarioCentavos: {
+                type: Type.NUMBER,
+                description: 'Valor unitário em centavos',
+              },
+              valorCentavos: {
+                type: Type.NUMBER,
+                description: 'Valor total da linha em centavos',
+              },
+              valorOriginalTexto: {
+                type: Type.STRING,
+                description: 'Texto original do valor como visto na imagem',
+              },
+              tipoSugerido: {
+                type: Type.STRING,
+                description: 'Tipo: "entrada", "saida", "adiantamento", "material" ou "divida"',
+              },
+              categoria: {
+                type: Type.STRING,
+                description: 'Categoria financeira (ex: Mão de Obra, Materiais, Alimentação, Transporte, Pix, Adiantamento, Dívida, etc.)',
+              },
+              formaPagamento: {
+                type: Type.STRING,
+                description: 'Forma de pagamento (Pix, Dinheiro, Cartão, Transferência, Boleto, etc.)',
+              },
+              pessoaSugerida: {
+                type: Type.STRING,
+                description: 'Pessoa relacionada a esta linha',
+              },
+              confianca: {
+                type: Type.STRING,
+                description: '"alta" ou "baixa"',
+              },
+              loja: {
+                type: Type.STRING,
+                description: 'Nome da loja ou fornecedor se for material',
+              },
+              dividaDeQuem: {
+                type: Type.STRING,
+                description: 'Se tipo for divida: "eu_devo" ou "me_devem"',
               },
             },
+            required: ['descricao', 'valorCentavos', 'tipoSugerido', 'confianca'],
           },
-          required: ['tipoDocumento', 'linhas'],
         },
       },
-    });
+      required: ['tipoDocumento', 'linhas'],
+    };
+
+    let response;
+    // Primary attempt with gemini-3.8-flash, fallback to gemini-flash-latest
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: { parts: [imagePart, textPart] },
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: schemaConfig,
+        },
+      });
+    } catch (primaryError) {
+      console.warn('Erro ao chamar gemini-3.8-flash, tentando fallback gemini-flash-latest:', primaryError);
+      response = await ai.models.generateContent({
+        model: 'gemini-flash-latest',
+        contents: { parts: [imagePart, textPart] },
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: schemaConfig,
+        },
+      });
+    }
 
     let responseText = response.text || '{}';
     // Strip markdown code fences if present (e.g., ```json ... ``` or ``` ...)
@@ -206,7 +229,7 @@ INSTRUÇÕES RIGOROSAS:
     let parsedData;
     try {
       parsedData = JSON.parse(responseText);
-    } catch (parseError) {
+    } catch {
       // Fallback: try finding first '{' and last '}'
       const firstBrace = responseText.indexOf('{');
       const lastBrace = responseText.lastIndexOf('}');
@@ -231,13 +254,22 @@ INSTRUÇÕES RIGOROSAS:
       }
     }
 
-    // Ensure array fields exist
+    // Ensure array fields exist and numbers are normalized to rounded integer cents
     if (!parsedData.linhas) {
       parsedData.linhas = [];
     }
     if (!parsedData.todasPessoasIdentificadas) {
       parsedData.todasPessoasIdentificadas = [];
     }
+
+    parsedData.totalEscritoNaAnotacaoCentavos = Math.round(Number(parsedData.totalEscritoNaAnotacaoCentavos) || 0);
+
+    parsedData.linhas = parsedData.linhas.map((l: any) => ({
+      ...l,
+      quantidade: Number(l.quantidade) || 1,
+      valorCentavos: Math.round(Number(l.valorCentavos) || 0),
+      valorUnitarioCentavos: l.valorUnitarioCentavos ? Math.round(Number(l.valorUnitarioCentavos)) : undefined,
+    }));
 
     return res.json({
       success: true,

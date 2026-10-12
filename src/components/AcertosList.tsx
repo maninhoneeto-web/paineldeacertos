@@ -57,6 +57,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
     tipoDocumentoIdentificado?: string;
     tituloSugerido?: string;
     pessoasIdentificadas?: string[];
+    pessoasIniciais?: PessoaTab[];
     totalEscritoCentavos?: number;
     totalEscritoFormatado?: string;
     observacoesOCR?: string;
@@ -232,6 +233,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
         tipoDocumentoIdentificado: ocr.tipoDocumento || 'Folha de Acerto',
         tituloSugerido: ocr.tituloSugeridoAcerto || 'Acerto ' + new Date().toLocaleDateString('pt-BR'),
         pessoasIdentificadas: pessoasCriadas.map((p) => p.nome),
+        pessoasIniciais: pessoasCriadas,
         totalEscritoCentavos: ocr.totalEscritoNaAnotacaoCentavos || 0,
         totalEscritoFormatado: ocr.totalEscritoFormatado,
         observacoesOCR: ocr.observacoes,
@@ -322,7 +324,10 @@ export const AcertosList: React.FC<AcertosListProps> = ({
                 accept="image/*"
                 className="hidden"
                 disabled={isProcessandoFoto}
-                onChange={(e) => handleUploadFotoParaNovoAcerto(e.target.files)}
+                onChange={(e) => {
+                  handleUploadFotoParaNovoAcerto(e.target.files);
+                  e.target.value = '';
+                }}
               />
             </label>
 
@@ -340,6 +345,49 @@ export const AcertosList: React.FC<AcertosListProps> = ({
 
       {/* CORPO DA LISTAGEM */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+
+        {/* HERO BANNER: ORGANIZAR TODO O ACERTO POR FOTO */}
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-800 via-teal-800 to-slate-900 text-white p-5 sm:p-7 shadow-xl border border-emerald-500/40">
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+            <div className="max-w-xl">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/10 text-emerald-300 border border-emerald-400/30 mb-2.5 backdrop-blur-xs">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-300 animate-spin" />
+                <span>Leitura Automática de Caderno e Notas com IA</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                Organize Todo o Acerto por Foto
+              </h2>
+              <p className="text-xs sm:text-sm text-emerald-100/90 mt-1.5 leading-relaxed">
+                Tire uma foto da folha do caderno de anotações ou comprovantes. A inteligência artificial identifica todas as pessoas, diárias, materiais, vales e valores, criando as abas e o balanço completo automaticamente!
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <label className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-xs sm:text-sm font-black shadow-lg shadow-emerald-950/40 transition cursor-pointer">
+                <Camera className="w-5 h-5 text-slate-950" />
+                <span>{isProcessandoFoto ? 'Processando Foto...' : '📷 Enviar Foto do Caderno / Acerto'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={isProcessandoFoto}
+                  onChange={(e) => {
+                    handleUploadFotoParaNovoAcerto(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+
+              <button
+                onClick={() => setModalNovoAberto(true)}
+                className="px-4 py-3.5 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs sm:text-sm font-bold border border-white/20 transition cursor-pointer"
+              >
+                + Criar Manual
+              </button>
+            </div>
+          </div>
+          <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
+        </div>
         
         {/* BARRA DE BUSCA E FILTROS */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
@@ -672,6 +720,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
           isCriandoNovoAcerto={true}
           tituloSugerido={dadosConferenciaFoto.tituloSugerido}
           pessoasIdentificadas={dadosConferenciaFoto.pessoasIdentificadas}
+          pessoasIniciais={dadosConferenciaFoto.pessoasIniciais}
           imagemDataUrl={dadosConferenciaFoto.imagemDataUrl}
           imagemHash={dadosConferenciaFoto.imagemHash}
           nomeArquivo={dadosConferenciaFoto.nomeArquivo}
