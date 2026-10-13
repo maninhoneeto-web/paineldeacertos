@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  X, Check, AlertTriangle, AlertCircle, Plus, Trash2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Maximize2,
-  ArrowRightLeft, FileText, Calendar, DollarSign, Tag, User, Layers, Info, Sparkles, UserPlus
+  X, Check, AlertTriangle, AlertCircle, Plus, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2,
+  FileText, Calendar, DollarSign, Tag, User, Layers, Info, Sparkles, RefreshCw
 } from 'lucide-react';
-import { Acerto, PessoaTab, LinhaConferenciaOCR, TipoLancamento, FormaPagamento, DirecaoDivida } from '../types';
+import { Acerto, PessoaTab, LinhaConferenciaOCR, TipoLancamento, FormaPagamento } from '../types';
 import { formatarCentavos, parseValorParaCentavos, formatarCentavosSemSimbolo } from '../utils/currency';
 import { PhotoZoomModal } from './PhotoZoomModal';
 
@@ -38,6 +38,7 @@ interface ConferenceModalProps {
     totalEscritoCentavos: number;
     observacoes: string;
   }) => Promise<void>;
+  onReprocessarComIA?: () => Promise<void>;
 }
 
 export const ConferenceModal: React.FC<ConferenceModalProps> = ({
@@ -45,7 +46,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   onClose,
   acerto,
   isCriandoNovoAcerto = false,
-  tituloSugerido = 'Acerto Organizado por Foto',
+  tituloSugerido = 'Proposta / Acerto Organizado por Foto',
   pessoasIdentificadas = [],
   pessoasIniciais,
   pessoaAtualId = '',
@@ -53,15 +54,16 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   imagemHash,
   nomeArquivo,
   tamanhoBytes,
-  tipoDocumentoIdentificado = 'Documento / Recibo',
+  tipoDocumentoIdentificado = 'Documento / Proposta / Recibo',
   totalEscritoCentavos = 0,
   totalEscritoFormatado = '',
   observacoesOCR = '',
   linhasIniciais,
   isDuplicada,
   onConfirmar,
+  onReprocessarComIA,
 }) => {
-  const [titulo, setTitulo] = useState(tituloSugerido || 'Acerto Organizado por Foto');
+  const [titulo, setTitulo] = useState(tituloSugerido || 'Proposta / Acerto por Foto');
   const [zoom, setZoom] = useState(1);
   const [rotacao, setRotacao] = useState(0);
   const [modalZoomAberto, setModalZoomAberto] = useState(false);
@@ -70,7 +72,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   const [observacoes, setObservacoes] = useState(observacoesOCR);
   const [tipoDoc, setTipoDoc] = useState(tipoDocumentoIdentificado);
 
-  // Lista de pessoas com suporte a criação automática mantendo IDs consistentes
+  // Lista de pessoas com suporte a criação automática
   const [pessoas, setPessoas] = useState<PessoaTab[]>(() => {
     if (pessoasIniciais && pessoasIniciais.length > 0) {
       return [...pessoasIniciais];
@@ -106,16 +108,12 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
     return basePessoas;
   });
 
-  // Linhas com associação inteligente de pessoas aos IDs reais
+  // Linhas com associação inteligente de pessoas
   const [linhas, setLinhas] = useState<LinhaConferenciaOCR[]>(() => {
     return (linhasIniciais || []).map((l) => {
-      // 1. Se o ID já bate com uma pessoa existente, mantém
       const matchId = pessoas.find((p) => p.id === l.pessoaId);
-      if (matchId) {
-        return l;
-      }
+      if (matchId) return l;
 
-      // 2. Tenta associar pelo nome sugerido da pessoa na linha
       if (l.pessoaSugeridaNome) {
         const matchNome = pessoas.find((p) =>
           p.nome.toLowerCase().includes(l.pessoaSugeridaNome!.toLowerCase()) ||
@@ -126,8 +124,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
         }
       }
 
-      // 3. Fallback seguro para primeira pessoa ou pessoaAtualId
-      const fallbackId = (pessoaAtualId && pessoas.some(p => p.id === pessoaAtualId))
+      const fallbackId = (pessoaAtualId && pessoas.some((p) => p.id === pessoaAtualId))
         ? pessoaAtualId
         : pessoas[0]?.id || 'geral';
 
@@ -138,16 +135,25 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
   const [nomeNovaPessoaInput, setNomeNovaPessoaInput] = useState('');
   const [mostrarInputNovaPessoa, setMostrarInputNovaPessoa] = useState(false);
 
+  // Sincroniza se linhasIniciais mudarem
+  useEffect(() => {
+    if (linhasIniciais && linhasIniciais.length > 0) {
+      setLinhas(linhasIniciais);
+    }
+  }, [linhasIniciais]);
+
   if (!isOpen) return null;
 
   // Totais em tempo real das linhas marcadas para inclusão
-  const { totalEntradas, totalSaidas, saldoResultante, somaLidaCentavos } = useMemo(() => {
+  const { totalEntradas, totalSaidas, saldoResultante, somaLidaCentavos, itensSelecionadosCount } = useMemo(() => {
     let entradas = 0;
     let saidas = 0;
     let somaLida = 0;
+    let selecionados = 0;
 
     for (const l of linhas) {
       if (!l.incluir) continue;
+      selecionados++;
       const v = Math.abs(l.valorCentavos || 0);
       somaLida += v;
       if (l.tipoSugerido === 'entrada') {
@@ -162,12 +168,12 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
       totalSaidas: saidas,
       saldoResultante: entradas - saidas,
       somaLidaCentavos: somaLida,
+      itensSelecionadosCount: selecionados,
     };
   }, [linhas]);
 
   const temDivergenciaTotal = totalEscritoCentavos > 0 && Math.abs(totalEscritoCentavos - somaLidaCentavos) > 100;
 
-  // Atualizar campo de uma linha
   const atualizarLinha = (id: string, campo: keyof LinhaConferenciaOCR, valor: any) => {
     setLinhas((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [campo]: valor } : item))
@@ -192,16 +198,15 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
       descricao: '',
       quantidade: 1,
       valorCentavos: 0,
-      tipoSugerido: 'saida',
-      categoria: 'Outros',
+      tipoSugerido: 'material',
+      categoria: 'Equipamentos e Materiais',
       pessoaId: pessoas[0]?.id || 'geral',
       confianca: 'alta',
       incluir: true,
     };
-    setLinhas((prev) => [...prev, nova]);
+    setLinhas((prev) => [nova, ...prev]);
   };
 
-  // Adicionar uma nova pessoa rapidamente
   const handleCriarNovaPessoa = (nome: string) => {
     const limpo = nome.trim();
     if (!limpo) return;
@@ -217,10 +222,123 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
     setMostrarInputNovaPessoa(false);
   };
 
+  // Exportar PDF completo com relatório formatado e foto anexada
+  const handleExportarPDF = async () => {
+    setIsGerandoPdf(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // Cabeçalho Corporativo NDS CFTV Digital
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageWidth, 28, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('NDS CFTV DIGITAL', 14, 12);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Relatório de Proposta, Itens & Conferência Contábil', 14, 18);
+      doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, 18, { align: 'right' });
+
+      let cursorY = 36;
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(titulo || 'Proposta / Itens da Foto', 14, cursorY);
+      cursorY += 6;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(
+        `Arquivo: ${nomeArquivo}  |  Documento: ${tipoDoc}  |  Total Saídas/Materiais: ${formatarCentavos(totalSaidas)}  |  Total Entradas: ${formatarCentavos(totalEntradas)}`,
+        14,
+        cursorY
+      );
+      cursorY += 7;
+
+      // Tabela dos lançamentos
+      const linhasParaExportar = linhas.filter((l) => l.incluir);
+      const rows = linhasParaExportar.map((l) => [
+        l.data ? new Date(l.data + 'T12:00:00').toLocaleDateString('pt-BR') : '-',
+        l.descricao || 'Item sem descrição',
+        pessoas.find((p) => p.id === l.pessoaId)?.nome || 'Geral',
+        l.categoria || 'Geral',
+        l.quantidade && l.quantidade > 1 ? String(l.quantidade) : '1',
+        l.tipoSugerido === 'material' ? 'MATERIAL' : l.tipoSugerido === 'adiantamento' ? 'VALE' : l.tipoSugerido.toUpperCase(),
+        formatarCentavos(l.valorCentavos),
+      ]);
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [['Data', 'Item / Descrição', 'Responsável/Aba', 'Categoria', 'Qtd', 'Tipo', 'Valor']],
+        body: rows,
+        theme: 'striped',
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: {
+          4: { halign: 'center' },
+          6: { halign: 'right', fontStyle: 'bold' },
+        },
+      });
+
+      cursorY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : cursorY + 40;
+
+      // Resumo de Totais
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(14, cursorY, pageWidth - 28, 18, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Total de Itens: ${linhasParaExportar.length}`, 18, cursorY + 7);
+      doc.text(`Total Saídas/Custos: ${formatarCentavos(totalSaidas)}`, 70, cursorY + 7);
+      doc.text(`Total Entradas: ${formatarCentavos(totalEntradas)}`, 130, cursorY + 7);
+      doc.setTextColor(saldoResultante >= 0 ? 5 : 220, saldoResultante >= 0 ? 150 : 38, saldoResultante >= 0 ? 105 : 38);
+      doc.text(`Saldo Final: ${formatarCentavos(saldoResultante)}`, 18, cursorY + 13);
+      cursorY += 24;
+
+      // Anexo: Foto do Comprovante / Proposta
+      if (cursorY + 115 > pageHeight - 15) {
+        doc.addPage();
+        cursorY = 20;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Anexo: Foto do Documento / Proposta / Caderno', 14, cursorY);
+      cursorY += 5;
+
+      try {
+        doc.addImage(imagemDataUrl, 'JPEG', 14, cursorY, 120, 95, undefined, 'FAST');
+      } catch (errImg) {
+        console.warn('Erro ao anexar imagem ao PDF:', errImg);
+      }
+
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text('NDS CFTV Digital - Documento Oficial', 14, pageHeight - 8);
+
+      const sanitizado = (titulo || 'proposta').toLowerCase().replace(/[^a-z0-9]/g, '_');
+      doc.save(`nds_proposta_${sanitizado}_${Date.now()}.pdf`);
+    } catch (errPdf: any) {
+      console.error(errPdf);
+      alert('Erro ao exportar PDF: ' + (errPdf.message || 'Tente novamente.'));
+    } finally {
+      setIsGerandoPdf(false);
+    }
+  };
+
   const handleSalvar = async () => {
     const linhasValidas = linhas.filter((l) => l.incluir && l.descricao.trim());
     if (linhasValidas.length === 0) {
-      alert('Selecione ou preencha pelo menos um lançamento para salvar.');
+      alert('Selecione ou preencha pelo menos um item para adicionar à proposta/acerto.');
       return;
     }
 
@@ -240,57 +358,100 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
       });
       onClose();
     } catch (e: any) {
-      alert('Erro ao salvar acerto: ' + (e.message || 'Tente novamente.'));
+      alert('Erro ao salvar itens: ' + (e.message || 'Tente novamente.'));
     } finally {
       setIsSalvando(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
       <div className="relative flex flex-col w-full max-w-6xl max-h-[96vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         
-        {/* TOPO: Cabeçalho com Título do Acerto Editável se for novo */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 gap-2">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
+        {/* TOPO: Cabeçalho com Título, Badges e BOTÕES DE AÇÃO RÁPIDA VISÍVEIS */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                {isCriandoNovoAcerto ? '✨ Organizar Todo o Acerto por Foto' : 'Conferência Inteligente do Acerto'}
+                {isCriandoNovoAcerto ? '✨ Proposta / Acerto Organizado por Foto' : 'Conferência de Itens & Proposta da Foto'}
               </h2>
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                {linhas.length} itens encontrados
+              </span>
             </div>
-            
-            {isCriandoNovoAcerto ? (
-              <div className="mt-1 flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-500">Título do Acerto:</span>
-                <input
-                  type="text"
-                  value={titulo}
-                  onChange={(e) => setTitulo(e.target.value)}
-                  className="px-2 py-0.5 text-xs sm:text-sm font-bold rounded-lg border border-emerald-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                  placeholder="Nome do acerto ou obra..."
-                />
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {nomeArquivo} • {tipoDoc} • Confirme os dados lidos pela IA antes de salvar
-              </p>
-            )}
+
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Título:</span>
+              <input
+                type="text"
+                value={titulo}
+                onChange={(e) => setTitulo(e.target.value)}
+                className="px-2.5 py-1 text-xs sm:text-sm font-bold rounded-lg border border-emerald-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white max-w-md focus:ring-2 focus:ring-emerald-500"
+                placeholder="Nome da proposta, orçamento ou acerto..."
+              />
+            </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="self-end sm:self-auto rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* BOTÕES DE AÇÃO NO TOPO (GARANTINDO QUE O USUÁRIO VEJA NA HORA) */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {/* BOTÃO AUMENTAR IMAGEM */}
+            <button
+              type="button"
+              onClick={() => setModalZoomAberto(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 font-bold text-xs sm:text-sm transition cursor-pointer"
+              title="Aumentar imagem e abrir zoom interativo em tela cheia"
+            >
+              <Maximize2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Aumentar Imagem</span>
+            </button>
+
+            {/* BOTÃO SALVAR EM PDF */}
+            <button
+              type="button"
+              onClick={handleExportarPDF}
+              disabled={isGerandoPdf}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-xs sm:text-sm border border-blue-300 dark:border-blue-800 transition cursor-pointer"
+              title="Baixar proposta ou itens em PDF com foto anexada"
+            >
+              <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span>{isGerandoPdf ? 'Gerando...' : 'Salvar em PDF'}</span>
+            </button>
+
+            {/* BOTÃO ADICIONAR À PROPOSTA / ACERTO (CTA PRINCIPAL) */}
+            <button
+              type="button"
+              onClick={handleSalvar}
+              disabled={isSalvando || itensSelecionadosCount === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+              title="Confirmar e adicionar todos os itens selecionados à proposta"
+            >
+              {isSalvando ? (
+                <span className="animate-spin">⏳ Salvando...</span>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>+ Adicionar à Proposta ({itensSelecionadosCount})</span>
+                </>
+              )}
+            </button>
+
+            {/* BOTÃO FECHAR */}
+            <button
+              onClick={onClose}
+              className="rounded-lg p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              title="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* BARRA DAS PESSOAS / ABAS DETECTADAS */}
         <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-2 bg-emerald-50/70 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800/50 text-xs">
           <div className="flex items-center gap-1.5 font-bold text-emerald-800 dark:text-emerald-300">
             <Sparkles className="w-4 h-4 text-emerald-600" />
-            <span>Abas / Pessoas Identificadas ({pessoas.length}):</span>
+            <span>Abas / Pessoas da Proposta ({pessoas.length}):</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -305,13 +466,13 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
             ))}
 
             {mostrarInputNovaPessoa ? (
-              <div className="inline-flex items-center gap-1">
+              <div className="inline-flex items-center gap-1 bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-emerald-500">
                 <input
                   type="text"
                   value={nomeNovaPessoaInput}
                   onChange={(e) => setNomeNovaPessoaInput(e.target.value)}
-                  placeholder="Nome da pessoa..."
-                  className="px-2 py-0.5 text-xs rounded-md border border-emerald-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  placeholder="Nome..."
+                  className="px-2 py-0.5 text-xs rounded-md border-0 bg-transparent text-slate-900 dark:text-white w-28 focus:outline-none"
                   autoFocus
                 />
                 <button
@@ -322,7 +483,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                 </button>
                 <button
                   onClick={() => setMostrarInputNovaPessoa(false)}
-                  className="text-slate-400 hover:text-slate-600"
+                  className="text-slate-400 hover:text-slate-600 px-1"
                 >
                   ✕
                 </button>
@@ -334,210 +495,251 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                 className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-emerald-400 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-xs font-semibold cursor-pointer"
               >
                 <Plus className="w-3 h-3" />
-                <span>+ Outra Pessoa</span>
+                <span>+ Pessoa/Aba</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* ALERTAS NO TOPO SE HOUVER DUPLICIDADE OU DIVERGÊNCIA */}
+        {/* ALERTAS SE HOUVER DUPLICIDADE OU DIVERGÊNCIA */}
         {(isDuplicada || temDivergenciaTotal) && (
           <div className="flex flex-col gap-1 px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/60 text-xs">
             {isDuplicada && (
               <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span><strong>Atenção: Imagem Já Cadastrada!</strong> Este comprovante já foi enviado anteriormente. Verifique se não está duplicando lançamentos.</span>
+                <span><strong>Atenção: Imagem Já Cadastrada!</strong> Este comprovante já foi enviado anteriormente.</span>
               </div>
             )}
             {temDivergenciaTotal && (
               <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
-                  <strong>Divergência de Totais:</strong> O valor total escrito na nota/anotação é <strong>{formatarCentavos(totalEscritoCentavos)}</strong>, mas a soma dos itens lidos é <strong>{formatarCentavos(somaLidaCentavos)}</strong>.
+                  <strong>Total da anotação:</strong> Na imagem está escrito <strong>{formatarCentavos(totalEscritoCentavos)}</strong> e a soma dos itens lidos é <strong>{formatarCentavos(somaLidaCentavos)}</strong>.
                 </span>
               </div>
             )}
           </div>
         )}
 
-        {/* CORPO: DUAS COLUNAS (FOTO COM ZOOM X TABELA EDITÁVEL) */}
+        {/* CORPO: DUAS COLUNAS (FOTO COM ZOOM X LISTA EDITÁVEL DE ITENS) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-hidden min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
           
-          {/* COLUNA ESQUERDA: VISUALIZADOR DA IMAGEM COM ZOOM */}
+          {/* COLUNA ESQUERDA: VISUALIZADOR DA IMAGEM COM CONTROLES DE ZOOM */}
           <div className="lg:col-span-5 flex flex-col bg-slate-900 overflow-hidden min-h-[280px] lg:min-h-[460px]">
-            <div className="flex items-center justify-between px-3 py-2 bg-slate-950/80 text-white text-xs border-b border-slate-800">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400 font-medium">Folha / Foto</span>
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-950/90 text-white text-xs border-b border-slate-800 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-medium">Foto do Documento</span>
                 <button
                   type="button"
                   onClick={() => setModalZoomAberto(true)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer"
-                  title="Aumentar imagem e abrir em tela cheia com zoom interativo"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer"
+                  title="Abrir imagem em tela cheia com zoom interativo"
                 >
-                  <Maximize2 className="w-3 h-3" />
+                  <Maximize2 className="w-3.5 h-3.5" />
                   <span>Aumentar Imagem</span>
                 </button>
               </div>
 
+              {/* Botões de Zoom rápidos no preview */}
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(1)))}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
-                  title="Diminuir zoom"
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </button>
-                <span className="font-mono text-[11px] px-1 text-slate-300">{Math.round(zoom * 100)}%</span>
-                <button
-                  type="button"
-                  onClick={() => setZoom((z) => Math.min(3, +(z + 0.2).toFixed(1)))}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
-                  title="Aumentar zoom"
+                  onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  title="Aproximar"
                 >
                   <ZoomIn className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
+                  onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.25).toFixed(2)))}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  title="Afastar"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => setRotacao((r) => (r + 90) % 360)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
-                  title="Girar 90°"
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  title="Girar"
                 >
                   <RotateCw className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
                   onClick={() => { setZoom(1); setRotacao(0); }}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
-                  title="Redefinir tamanho e rotação"
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  title="Restaurar visualização"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                  100%
                 </button>
               </div>
             </div>
 
+            {/* Container da Imagem com clique para tela cheia */}
             <div 
+              className="flex-1 flex items-center justify-center p-3 overflow-auto bg-slate-950 cursor-zoom-in relative group"
               onClick={() => setModalZoomAberto(true)}
-              className="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-950/40 select-none cursor-zoom-in relative group"
-              title="Clique para ampliar em tela cheia com zoom e arraste"
+              title="Clique para abrir com zoom interativo em tela cheia"
             >
               <img
                 src={imagemDataUrl}
-                alt="Comprovante"
-                style={{ transform: `scale(${zoom}) rotate(${rotacao}deg)`, transformOrigin: 'center center' }}
-                className="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-transform duration-150"
+                alt={nomeArquivo}
+                style={{
+                  transform: `scale(${zoom}) rotate(${rotacao}deg)`,
+                  transition: 'transform 0.15s ease-out',
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                }}
+                className="rounded shadow-md select-none pointer-events-none"
               />
-              <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity bg-black/75 text-white text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-xs pointer-events-none">
-                <Maximize2 className="w-3 h-3 text-emerald-400" />
-                <span>Clique para ampliar</span>
+
+              <div className="absolute bottom-3 right-3 bg-black/70 text-white text-[11px] font-semibold px-2.5 py-1 rounded-full pointer-events-none backdrop-blur-xs flex items-center gap-1 group-hover:bg-emerald-600 transition">
+                <Maximize2 className="w-3 h-3" />
+                <span>Clique para Aumentar Imagem</span>
               </div>
             </div>
 
-            {totalEscritoFormatado && (
-              <div className="px-3 py-2 bg-slate-950 text-slate-300 text-xs border-t border-slate-800 flex justify-between items-center">
-                <span>Total identificado na nota/folha:</span>
-                <span className="font-bold text-emerald-400">{totalEscritoFormatado}</span>
-              </div>
-            )}
+            <div className="p-2 bg-slate-950/90 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+              <span>Arquivo: {nomeArquivo}</span>
+              <span>{Math.round(tamanhoBytes / 1024)} KB</span>
+            </div>
           </div>
 
-          {/* COLUNA DIREITA: TABELA EDITÁVEL DOS LANÇAMENTOS EXTRAÍDOS */}
-          <div className="lg:col-span-7 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
+          {/* COLUNA DIREITA: TABELA EDITÁVEL DOS ITENS EXTRAÍDOS */}
+          <div className="lg:col-span-7 flex flex-col min-h-0 bg-white dark:bg-slate-900">
             
-            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800 text-xs">
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                Lançamentos Organizados ({linhas.length})
-              </span>
-              <button
-                onClick={adicionarLinha}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Adicionar Linha</span>
-              </button>
+            {/* TOPO DA TABELA DE ITENS */}
+            <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Tag className="w-4 h-4 text-emerald-600" />
+                  <span>Itens Extraídos da Foto ({linhas.length})</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Verifique cada item, quantidade e valor. Todos serão adicionados à proposta.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={adicionarLinha}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Item Manual</span>
+                </button>
+              </div>
             </div>
 
-            {/* Lista Editável das Linhas */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
+            {/* LISTA ROLÁVEL DE ITENS */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
               {linhas.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400">
-                  <FileText className="w-10 h-10 mb-2 stroke-1" />
-                  <p className="text-sm font-medium">Nenhum lançamento identificado.</p>
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  <p>Nenhum item adicionado ainda.</p>
                   <button
                     onClick={adicionarLinha}
-                    className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
+                    className="mt-2 text-emerald-600 font-bold hover:underline"
                   >
-                    + Inserir Lançamento Manual
+                    + Clique aqui para adicionar um item
                   </button>
                 </div>
               ) : (
-                linhas.map((linha) => {
+                linhas.map((linha, idx) => {
                   const isBaixaConfianca = linha.confianca === 'baixa';
-                  const pessoaDaLinha = pessoas.find((p) => p.id === linha.pessoaId);
-
                   return (
                     <div
                       key={linha.id}
                       className={`p-3 rounded-xl border transition ${
                         !linha.incluir
-                          ? 'opacity-40 bg-slate-100 border-slate-200 dark:bg-slate-800/40 dark:border-slate-800'
+                          ? 'opacity-40 bg-slate-100 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800'
                           : isBaixaConfianca
-                          ? 'bg-amber-50/80 border-amber-300 dark:bg-amber-950/20 dark:border-amber-800'
-                          : 'bg-white border-slate-200 dark:bg-slate-800/60 dark:border-slate-700 shadow-2xs'
+                          ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800'
+                          : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300 shadow-2xs'
                       }`}
                     >
-                      {/* Linha 1: Checkbox, Descrição, Valor e Exclusão */}
-                      <div className="flex items-start gap-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        {/* Checkbox incluir */}
                         <input
                           type="checkbox"
                           checked={linha.incluir}
                           onChange={(e) => atualizarLinha(linha.id, 'incluir', e.target.checked)}
-                          className="mt-1.5 h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                          title="Marque para incluir este lançamento"
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          title="Marcar para incluir na proposta"
                         />
 
-                        <div className="flex-1">
+                        {/* Descrição do item */}
+                        <input
+                          type="text"
+                          value={linha.descricao}
+                          onChange={(e) => atualizarLinha(linha.id, 'descricao', e.target.value)}
+                          placeholder="Descrição do item ou equipamento..."
+                          className="flex-1 px-2.5 py-1 text-xs sm:text-sm font-semibold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                        />
+
+                        {/* Quantidade */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[11px] text-slate-400 font-semibold">Qtd:</span>
                           <input
-                            type="text"
-                            value={linha.descricao}
-                            onChange={(e) => atualizarLinha(linha.id, 'descricao', e.target.value)}
-                            placeholder="Descrição do item ou adiantamento..."
-                            className="w-full text-xs sm:text-sm font-medium px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                            type="number"
+                            min="1"
+                            value={linha.quantidade || 1}
+                            onChange={(e) => atualizarLinha(linha.id, 'quantidade', Math.max(1, Number(e.target.value) || 1))}
+                            className="w-14 px-2 py-1 text-xs text-center font-bold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                           />
                         </div>
 
-                        <div className="w-28 sm:w-32">
-                          <div className="relative">
-                            <span className="absolute left-2 top-2 text-[11px] font-bold text-slate-400">R$</span>
-                            <input
-                              type="text"
-                              value={formatarCentavosSemSimbolo(linha.valorCentavos)}
-                              onChange={(e) => atualizarValorLinha(linha.id, e.target.value)}
-                              placeholder="0,00"
-                              className="w-full text-right font-mono font-bold text-xs sm:text-sm pl-7 pr-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-                            />
-                          </div>
+                        {/* Valor em R$ */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-xs font-bold text-slate-400">R$</span>
+                          <input
+                            type="text"
+                            value={formatarCentavosSemSimbolo(linha.valorCentavos)}
+                            onChange={(e) => atualizarValorLinha(linha.id, e.target.value)}
+                            placeholder="0,00"
+                            className="w-24 px-2.5 py-1 text-xs sm:text-sm font-bold font-mono text-right rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                          />
                         </div>
 
+                        {/* Excluir */}
                         <button
+                          type="button"
                           onClick={() => removerLinha(linha.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                          title="Excluir este item"
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                          title="Remover este item"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
 
-                      {/* Linha 2: Pessoa (Aba), Tipo (Sub-aba), Categoria e Data */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
-                        
-                        {/* Pessoa (Aba de destino) */}
-                        <div>
-                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Pessoa (Aba)</label>
+                      {/* Linha secundária de atributos: Tipo, Aba/Pessoa, Categoria */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+                        {/* Tipo */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold">Tipo:</span>
+                          <select
+                            value={linha.tipoSugerido}
+                            onChange={(e) => atualizarLinha(linha.id, 'tipoSugerido', e.target.value)}
+                            className="flex-1 px-1.5 py-0.5 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                          >
+                            <option value="material">Material / Equipamento</option>
+                            <option value="saida">Saída / Mão de Obra</option>
+                            <option value="entrada">Entrada / Receita</option>
+                            <option value="adiantamento">Adiantamento / Vale</option>
+                            <option value="divida">Dívida / Pendente</option>
+                          </select>
+                        </div>
+
+                        {/* Pessoa / Aba */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold">Aba:</span>
                           <select
                             value={linha.pessoaId}
                             onChange={(e) => atualizarLinha(linha.id, 'pessoaId', e.target.value)}
-                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold"
+                            className="flex-1 px-1.5 py-0.5 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
                           >
                             {pessoas.map((p) => (
                               <option key={p.id} value={p.id}>
@@ -547,57 +749,23 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                           </select>
                         </div>
 
-                        {/* Tipo (Sub-aba) */}
-                        <div>
-                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Tipo / Seção</label>
-                          <select
-                            value={linha.tipoSugerido}
-                            onChange={(e) => atualizarLinha(linha.id, 'tipoSugerido', e.target.value as TipoLancamento)}
-                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-semibold"
-                          >
-                            <option value="adiantamento">Adiantamento / Vale</option>
-                            <option value="saida">Saída / Despesa</option>
-                            <option value="material">Material</option>
-                            <option value="entrada">Entrada</option>
-                            <option value="divida">Dívida</option>
-                          </select>
-                        </div>
-
                         {/* Categoria */}
-                        <div>
-                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Categoria</label>
+                        <div className="flex items-center gap-1 col-span-2 sm:col-span-1">
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold">Cat:</span>
                           <input
                             type="text"
                             value={linha.categoria || 'Geral'}
                             onChange={(e) => atualizarLinha(linha.id, 'categoria', e.target.value)}
-                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
-                          />
-                        </div>
-
-                        {/* Data */}
-                        <div>
-                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Data</label>
-                          <input
-                            type="date"
-                            value={linha.data || new Date().toISOString().slice(0, 10)}
-                            onChange={(e) => atualizarLinha(linha.id, 'data', e.target.value)}
-                            className="w-full px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                            className="flex-1 px-1.5 py-0.5 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                            placeholder="Categoria..."
                           />
                         </div>
                       </div>
 
-                      {/* Notificação se a IA identificou a pessoa específica */}
-                      {linha.pessoaSugeridaNome && (
-                        <div className="flex items-center gap-1.5 mt-2 px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-[11px] text-slate-600 dark:text-slate-300">
-                          <Info className="w-3 h-3 text-emerald-600 shrink-0" />
-                          <span>Identificado na foto para: <strong>{linha.pessoaSugeridaNome}</strong> (Alocado na aba: <strong>{pessoaDaLinha?.nome || 'Geral'}</strong>)</span>
-                        </div>
-                      )}
-
                       {isBaixaConfianca && (
-                        <div className="flex items-center gap-1 mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                          <AlertTriangle className="w-3 h-3 shrink-0" />
-                          <span>Confiança baixa da IA (texto com rasura ou corte). Verifique o valor.</span>
+                        <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>Confiança moderada da IA. Verifique se a quantidade e o valor estão corretos.</span>
                         </div>
                       )}
                     </div>
@@ -606,153 +774,71 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
               )}
             </div>
 
-            {/* PAINEL DE TOTAIS EM TEMPO REAL */}
-            <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700">
+            {/* PAINEL INFERIOR DE TOTAIS E BOTÕES DE AÇÃO FIXOS */}
+            <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700">
               <div className="grid grid-cols-3 gap-2 text-center text-xs sm:text-sm font-semibold mb-3">
-                <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
-                  <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 uppercase">Entradas</span>
-                  <span className="font-bold text-emerald-700 dark:text-emerald-300">{formatarCentavos(totalEntradas)}</span>
+                <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+                  <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-bold">Entradas</span>
+                  <span className="font-bold font-mono text-emerald-700 dark:text-emerald-300">{formatarCentavos(totalEntradas)}</span>
                 </div>
-                <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800">
-                  <span className="block text-[10px] text-rose-600 dark:text-rose-400 uppercase">Saídas/Adiantamentos</span>
-                  <span className="font-bold text-rose-700 dark:text-rose-300">{formatarCentavos(totalSaidas)}</span>
+                <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800">
+                  <span className="block text-[10px] text-rose-600 dark:text-rose-400 uppercase font-bold">Saídas / Materiais</span>
+                  <span className="font-bold font-mono text-rose-700 dark:text-rose-300">{formatarCentavos(totalSaidas)}</span>
                 </div>
-                <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
-                  <span className="block text-[10px] text-slate-500 uppercase">Saldo Resultante</span>
-                  <span className={`font-bold ${saldoResultante >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
+                  <span className="block text-[10px] text-slate-500 uppercase font-bold">Saldo</span>
+                  <span className={`font-bold font-mono ${saldoResultante >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                     {formatarCentavos(saldoResultante)}
                   </span>
                 </div>
               </div>
 
-              {/* Botões de Ação */}
-              <div className="flex items-center justify-end gap-2 sm:gap-3">
-                {/* Botão Salvar em PDF na Conferência */}
-                <button
-                  type="button"
-                  disabled={isGerandoPdf}
-                  onClick={async () => {
-                    setIsGerandoPdf(true);
-                    try {
-                      const { jsPDF } = await import('jspdf');
-                      const { default: autoTable } = await import('jspdf-autotable');
-                      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-                      const pageWidth = doc.internal.pageSize.getWidth();
-                      const pageHeight = doc.internal.pageSize.getHeight();
+              {/* BOTÕES DE AÇÃO INFERIORES */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  <strong>{itensSelecionadosCount}</strong> de {linhas.length} itens marcados
+                </div>
 
-                      // Cabeçalho Corporativo
-                      doc.setFillColor(15, 23, 42);
-                      doc.rect(0, 0, pageWidth, 28, 'F');
-                      doc.setTextColor(255, 255, 255);
-                      doc.setFont('helvetica', 'bold');
-                      doc.setFontSize(14);
-                      doc.text('NDS CFTV DIGITAL', 14, 12);
+                <div className="flex items-center gap-2 sm:gap-3">
+                  {/* Botão Salvar em PDF */}
+                  <button
+                    type="button"
+                    disabled={isGerandoPdf}
+                    onClick={handleExportarPDF}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm border border-slate-300 dark:border-slate-700 transition cursor-pointer"
+                    title="Salvar esta conferência e comprovante em PDF"
+                  >
+                    <FileText className="w-4 h-4 text-emerald-600" />
+                    <span>{isGerandoPdf ? 'Gerando...' : 'Salvar em PDF'}</span>
+                  </button>
 
-                      doc.setFont('helvetica', 'normal');
-                      doc.setFontSize(9);
-                      doc.setTextColor(148, 163, 184);
-                      doc.text('Relatório de Conferência de Comprovante & Lançamentos', 14, 18);
-                      doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, 18, { align: 'right' });
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-3 py-2 rounded-xl text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
 
-                      let cursorY = 36;
-                      doc.setTextColor(15, 23, 42);
-                      doc.setFont('helvetica', 'bold');
-                      doc.setFontSize(11);
-                      doc.text(titulo || 'Conferência de Comprovante', 14, cursorY);
-                      cursorY += 5;
-
-                      doc.setFont('helvetica', 'normal');
-                      doc.setFontSize(8);
-                      doc.setTextColor(100, 116, 139);
-                      doc.text(`Arquivo: ${nomeArquivo} | Tipo: ${tipoDoc} | Total Saídas: ${formatarCentavos(totalSaidas)}`, 14, cursorY);
-                      cursorY += 6;
-
-                      // Tabela dos lançamentos
-                      const linhasParaExportar = linhas.filter((l) => l.incluir);
-                      const rows = linhasParaExportar.map((l) => [
-                        l.data ? new Date(l.data + 'T12:00:00').toLocaleDateString('pt-BR') : '-',
-                        l.descricao || 'Item sem descrição',
-                        pessoas.find((p) => p.id === l.pessoaId)?.nome || 'Geral',
-                        l.categoria || 'Geral',
-                        l.tipoSugerido === 'adiantamento' ? 'Adiantamento/Val' : l.tipoSugerido.toUpperCase(),
-                        formatarCentavos(l.valorCentavos),
-                      ]);
-
-                      autoTable(doc, {
-                        startY: cursorY,
-                        head: [['Data', 'Descrição', 'Pessoa', 'Categoria', 'Tipo', 'Valor']],
-                        body: rows,
-                        theme: 'striped',
-                        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
-                        styles: { fontSize: 8, cellPadding: 2 },
-                        columnStyles: {
-                          5: { halign: 'right', fontStyle: 'bold' },
-                        },
-                      });
-
-                      cursorY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : cursorY + 40;
-
-                      // Foto do Comprovante anexada
-                      if (cursorY + 110 > pageHeight - 15) {
-                        doc.addPage();
-                        cursorY = 20;
-                      }
-
-                      doc.setFont('helvetica', 'bold');
-                      doc.setFontSize(10);
-                      doc.setTextColor(15, 23, 42);
-                      doc.text('Anexo: Foto do Comprovante', 14, cursorY);
-                      cursorY += 5;
-
-                      try {
-                        doc.addImage(imagemDataUrl, 'JPEG', 14, cursorY, 110, 85, undefined, 'FAST');
-                      } catch (errImg) {
-                        console.warn('Erro ao anexar imagem ao PDF:', errImg);
-                      }
-
-                      doc.setFontSize(8);
-                      doc.setTextColor(148, 163, 184);
-                      doc.text('NDS CFTV Digital - Documento Contábil', 14, pageHeight - 8);
-
-                      doc.save(`nds_conferencia_${Date.now()}.pdf`);
-                    } catch (errPdf: any) {
-                      console.error(errPdf);
-                      alert('Erro ao exportar PDF: ' + errPdf.message);
-                    } finally {
-                      setIsGerandoPdf(false);
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm border border-slate-300 dark:border-slate-700 transition cursor-pointer"
-                  title="Salvar esta conferência e comprovante em PDF"
-                >
-                  <FileText className="w-4 h-4 text-emerald-600" />
-                  <span>{isGerandoPdf ? 'Gerando...' : 'Salvar em PDF'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSalvar}
-                  disabled={isSalvando || linhas.length === 0}
-                  className="flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
-                >
-                  {isSalvando ? (
-                    <span className="animate-spin">⏳ Salvando...</span>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>{isCriandoNovoAcerto ? 'Criar Acerto Completo' : `Confirmar (${linhas.filter((l) => l.incluir).length})`}</span>
-                    </>
-                  )}
-                </button>
+                  {/* Botão Adicionar à Proposta / Acerto */}
+                  <button
+                    type="button"
+                    onClick={handleSalvar}
+                    disabled={isSalvando || itensSelecionadosCount === 0}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSalvando ? (
+                      <span className="animate-spin">⏳ Salvando...</span>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>{isCriandoNovoAcerto ? 'Criar Proposta Completa' : `+ Adicionar à Proposta (${itensSelecionadosCount})`}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
+
             </div>
 
           </div>
@@ -766,7 +852,7 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
         isOpen={modalZoomAberto}
         onClose={() => setModalZoomAberto(false)}
         imagemUrl={imagemDataUrl}
-        titulo={`Comprovante: ${nomeArquivo}`}
+        titulo={`Documento: ${titulo}`}
         subtitulo={tipoDoc}
       />
     </div>

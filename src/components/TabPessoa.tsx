@@ -147,7 +147,7 @@ export const TabPessoa: React.FC<TabPessoaProps> = ({
           {/* Botão Enviar Imagem Grande */}
           <label className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-sm transition cursor-pointer">
             <Camera className="w-4 h-4" />
-            <span>{isEnviandoImagem ? 'Lendo...' : 'Enviar Foto'}</span>
+            <span>{isEnviandoImagem ? 'Lendo com IA...' : 'Subir Foto / Proposta'}</span>
             <input
               type="file"
               accept="image/*"

@@ -469,9 +469,21 @@ export async function inicializarDadosSeNecessario(): Promise<void> {
   if (acertos.length > 0) {
     // Sanitização de observações legadas com estimativas fixas de texto
     const cftv = acertos.find((a) => a.id === 'acerto_nds_cftv_digital');
-    if (cftv && cftv.observacoes?.includes('Faturamento R$ 9.000,00')) {
-      cftv.observacoes = 'Fechamento financeiro NDS CFTV Digital';
-      await salvarAcerto(cftv);
+    if (cftv) {
+      let modificado = false;
+      if (cftv.observacoes?.includes('Faturamento R$ 9.000,00')) {
+        cftv.observacoes = 'Fechamento financeiro NDS CFTV Digital';
+        modificado = true;
+      }
+      if (cftv.configDivisaoLucros?.faturamentoProjetoCentavos === 900000 || cftv.configDivisaoLucros?.usarPrecoFixo) {
+        cftv.configDivisaoLucros.usarPrecoFixo = false;
+        cftv.configDivisaoLucros.faturamentoProjetoCentavos = 0;
+        cftv.configDivisaoLucros.taxaProjetoCentavos = 0;
+        modificado = true;
+      }
+      if (modificado) {
+        await salvarAcerto(cftv);
+      }
     }
     return;
   }
@@ -500,9 +512,9 @@ export async function inicializarDadosSeNecessario(): Promise<void> {
       'Outros',
     ],
     configDivisaoLucros: {
-      usarPrecoFixo: true,
-      faturamentoProjetoCentavos: 900000, // R$ 9.000,00
-      taxaProjetoCentavos: 100000,        // R$ 1.000,00 (Base: R$ 8.000,00)
+      usarPrecoFixo: false,
+      faturamentoProjetoCentavos: 0,
+      taxaProjetoCentavos: 0,
       reservaEmergenciaPorcentagem: 0,
       participantes: [
         { id: 'part_neto', pessoaId: 'p_neto', nome: 'Neto', porcentagem: 50, descontarAdiantamentos: true },

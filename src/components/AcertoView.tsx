@@ -611,9 +611,9 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             </button>
 
             {/* Ler Foto com IA */}
-            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition cursor-pointer">
+            <label className="flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-bold border border-slate-200 dark:border-slate-700 transition cursor-pointer shadow-2xs">
               <Camera className="w-4 h-4 text-emerald-600" />
-              <span className="hidden sm:inline">{isProcessandoImagem ? 'Lendo...' : 'Ler Foto (IA)'}</span>
+              <span>{isProcessandoImagem ? 'Lendo com IA...' : 'Ler Foto / Proposta'}</span>
               <input
                 type="file"
                 accept="image/*"

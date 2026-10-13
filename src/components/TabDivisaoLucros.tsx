@@ -20,25 +20,39 @@ export const TabDivisaoLucros: React.FC<TabDivisaoLucrosProps> = ({
   onSalvarConfigLucros,
   onExportarPdf,
 }) => {
-  // Configuração opcional de preço fixo / contrato
+  // Configuração opcional de preço fixo / contrato (por padrão 100% dinâmico)
   const configSalva = acerto.configDivisaoLucros;
   const [usarPrecoFixo, setUsarPrecoFixo] = useState<boolean>(() => {
-    if (configSalva?.usarPrecoFixo !== undefined) return configSalva.usarPrecoFixo;
-    return Boolean(configSalva?.faturamentoProjetoCentavos && configSalva.faturamentoProjetoCentavos > 0);
+    if (configSalva?.usarPrecoFixo === true && configSalva.faturamentoProjetoCentavos && configSalva.faturamentoProjetoCentavos !== 900000) {
+      return true;
+    }
+    return false;
   });
 
   const [faturamentoCentavos, setFaturamentoCentavos] = useState<number>(() => {
-    return configSalva?.faturamentoProjetoCentavos ?? 0;
+    if (configSalva?.faturamentoProjetoCentavos && configSalva.faturamentoProjetoCentavos !== 900000) {
+      return configSalva.faturamentoProjetoCentavos;
+    }
+    return 0;
   });
   const [faturamentoTexto, setFaturamentoTexto] = useState<string>(() => {
-    return configSalva?.faturamentoProjetoCentavos ? formatarCentavos(configSalva.faturamentoProjetoCentavos) : '';
+    if (configSalva?.faturamentoProjetoCentavos && configSalva.faturamentoProjetoCentavos !== 900000) {
+      return formatarCentavos(configSalva.faturamentoProjetoCentavos);
+    }
+    return '';
   });
 
   const [taxaCentavos, setTaxaCentavos] = useState<number>(() => {
-    return configSalva?.taxaProjetoCentavos ?? 0;
+    if (configSalva?.taxaProjetoCentavos && configSalva.taxaProjetoCentavos !== 100000) {
+      return configSalva.taxaProjetoCentavos;
+    }
+    return 0;
   });
   const [taxaTexto, setTaxaTexto] = useState<string>(() => {
-    return configSalva?.taxaProjetoCentavos ? formatarCentavos(configSalva.taxaProjetoCentavos) : '';
+    if (configSalva?.taxaProjetoCentavos && configSalva.taxaProjetoCentavos !== 100000) {
+      return formatarCentavos(configSalva.taxaProjetoCentavos);
+    }
+    return '';
   });
 
   const [reservaPorcentagem, setReservaPorcentagem] = useState<number>(
@@ -87,15 +101,17 @@ export const TabDivisaoLucros: React.FC<TabDivisaoLucrosProps> = ({
     if (acerto.configDivisaoLucros) {
       const cfg = acerto.configDivisaoLucros;
       if (cfg.usarPrecoFixo !== undefined) {
-        setUsarPrecoFixo(cfg.usarPrecoFixo);
+        setUsarPrecoFixo(cfg.usarPrecoFixo && cfg.faturamentoProjetoCentavos !== 900000);
       }
       if (cfg.faturamentoProjetoCentavos !== undefined) {
-        setFaturamentoCentavos(cfg.faturamentoProjetoCentavos);
-        setFaturamentoTexto(cfg.faturamentoProjetoCentavos ? formatarCentavos(cfg.faturamentoProjetoCentavos) : '');
+        const fat = cfg.faturamentoProjetoCentavos === 900000 ? 0 : cfg.faturamentoProjetoCentavos;
+        setFaturamentoCentavos(fat);
+        setFaturamentoTexto(fat ? formatarCentavos(fat) : '');
       }
       if (cfg.taxaProjetoCentavos !== undefined) {
-        setTaxaCentavos(cfg.taxaProjetoCentavos);
-        setTaxaTexto(cfg.taxaProjetoCentavos ? formatarCentavos(cfg.taxaProjetoCentavos) : '');
+        const tx = cfg.taxaProjetoCentavos === 100000 ? 0 : cfg.taxaProjetoCentavos;
+        setTaxaCentavos(tx);
+        setTaxaTexto(tx ? formatarCentavos(tx) : '');
       }
       setReservaPorcentagem(cfg.reservaEmergenciaPorcentagem || 0);
       if (cfg.participantes?.length > 0) {
@@ -350,7 +366,7 @@ export const TabDivisaoLucros: React.FC<TabDivisaoLucrosProps> = ({
                   setFaturamentoTexto(m.textoFormatado);
                   setFaturamentoCentavos(m.centavos);
                 }}
-                placeholder="Ex: R$ 9.000,00"
+                placeholder="R$ 0,00"
                 className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold text-sm text-slate-900 dark:text-white"
               />
               <span className="text-[10px] text-slate-400 block mt-0.5">

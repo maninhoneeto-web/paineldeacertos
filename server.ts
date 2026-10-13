@@ -55,28 +55,32 @@ app.post('/api/gemini/extract-receipt', async (req: Request, res: Response) => {
       cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
     }
 
-    const systemPrompt = `Você é o melhor contador e auditor financeiro pessoal e de obras do Brasil.
-Sua especialidade é analisar fotos de cadernos de acertos de obras, anotações de despesas de equipes, comprovantes de Pix, notas fiscais, recibos manuais e tabelas manuscritas.
+    const systemPrompt = `Você é o melhor contador e auditor financeiro especialista em acertos, propostas comerciais, orçamentos e obras do Brasil.
+Sua especialidade é analisar fotos de cadernos de acertos de obras, propostas comerciais de CFTV/serviços, listas manuscritas de materiais, anotações de despesas de equipes, comprovantes de Pix, notas fiscais, recibos manuais e tabelas manuscritas.
 
 INSTRUÇÕES RIGOROSAS:
-1. SE FOR UMA FOLHA DE ACERTO OU CADERNO COM VÁRIAS PESSOAS:
-   - Identifique o TÍTULO do acerto sugerido (ex: "Acerto Obra Casa 3", "Acerto Semanal Pedreiros", "Contas Outubro").
-   - Identifique TODAS AS PESSOAS ou fornecedores citados (ex: ["João", "Tiago", "Valdeci", "Loja do Pedro"]).
-   - Extraia CADA LINHA individual atribuindo ao nome da pessoa correspondente ('pessoaSugerida').
-2. NUNCA invente ou adivinhe valores. Se um número for ilegível, rasurado ou cortado, deixe 'valorCentavos' como 0 e marque 'confianca' como 'baixa'.
+1. IDENTIFICAÇÃO E EXTRAÇÃO TOTAL DE ITENS:
+   - Extraia CADA LINHA OU ITEM visível na foto (equipamentos de CFTV, câmeras, cabos, fontes, conectores, materiais, diárias, mão de obra, serviços, saídas, despesas, vales, adiantamentos).
+   - Se for uma PROPOSTA ou ORÇAMENTO comercial, identifique o título sugerido (ex: "Proposta CFTV - Cliente", "Orçamento Instalação"), o cliente ou fornecedor, e liste TODOS os itens da proposta detalhadamente.
+   - Se for uma FOLHA DE ACERTO OU CADERNO com várias pessoas:
+     * Identifique o TÍTULO do acerto sugerido (ex: "Acerto Obra Casa 3", "Acerto Semanal").
+     * Identifique TODAS AS PESSOAS citadas (ex: ["Neto", "Victor", "João", "Loja"]).
+     * Extraia cada item atribuindo ao nome da pessoa correspondente ('pessoaSugerida').
+2. NUNCA DEIXE A LISTA VAZIA se houver linhas de texto ou valores visíveis na imagem.
 3. 'valorCentavos' DEVE SER UM NÚMERO INTEIRO representando a quantia em centavos de Real:
    - R$ 150,00 => 15000
    - R$ 12,50 => 1250
    - R$ 0,99 => 99
    - R$ 3.450,20 => 345020
+   - Se houver quantidade e valor unitário, preencha 'quantidade' e 'valorUnitarioCentavos' (ex: 4 câmeras a 150,00 = valorCentavos: 60000).
 4. 'tipoSugerido' deve ser um destes:
-   - 'entrada': recebimento de dinheiro, pix recebido, adiantamento de cliente, receita.
-   - 'saida': gasto geral, combustível, refeição, diária paga, serviço.
-   - 'adiantamento': adiantamento/vale entregue a um funcionário ou parceiro.
-   - 'material': compra de materiais (cimento, areia, fios, tintas, parafusos, etc.) com loja, quantidade e valor unitário.
-   - 'divida': conta pendente, fiado, boleto a pagar, promissória ou saldo em aberto.
-5. 'confianca' deve ser 'alta' (texto e números claros) ou 'baixa' (rasura, caligrafia difícil, dobra no papel, número incerto).
-6. Identifique se na imagem está escrito um TOTAL GERAL ou soma final da folha em 'totalEscritoNaAnotacaoCentavos'.
+   - 'material': compra ou item de material/equipamento (câmeras, cabos, conectores, dvr, cimento, fios, ferramentas, etc.).
+   - 'saida': gasto geral, diária paga, serviço, refeição, combustível.
+   - 'entrada': recebimento de dinheiro, sinal do cliente, pix recebido, valor da proposta.
+   - 'adiantamento': adiantamento/vale entregue a um participante.
+   - 'divida': conta pendente, fiado, saldo em aberto.
+5. 'confianca' deve ser 'alta' (texto e números legíveis) ou 'baixa' (rasura ou caligrafia difícil).
+6. Identifique se na imagem está escrito um TOTAL GERAL ou soma final da folha/proposta em 'totalEscritoNaAnotacaoCentavos'.
 7. Pessoas conhecidas já cadastradas: ${knownPersons.join(', ') || 'nenhuma informada'}. Pessoa atual da aba: "${currentPerson || 'Geral'}".
 8. Forneça observações e resumo em português claro.`;
 
@@ -197,29 +201,41 @@ INSTRUÇÕES RIGOROSAS:
       required: ['tipoDocumento', 'linhas'],
     };
 
-    let response;
-    // Primary attempt with gemini-3.8-flash, fallback to gemini-flash-latest
-    try {
-      response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: { parts: [imagePart, textPart] },
-        config: {
-          systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          responseSchema: schemaConfig,
-        },
-      });
-    } catch (primaryError) {
-      console.warn('Erro ao chamar gemini-3.8-flash, tentando fallback gemini-flash-latest:', primaryError);
-      response = await ai.models.generateContent({
-        model: 'gemini-flash-latest',
-        contents: { parts: [imagePart, textPart] },
-        config: {
-          systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          responseSchema: schemaConfig,
-        },
-      });
+    let response: any;
+    let lastError: any;
+    const candidateModels = [
+      'gemini-2.5-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-flash-latest',
+    ];
+
+    for (const modelName of candidateModels) {
+      try {
+        console.log(`Tentando extração de foto com modelo: ${modelName}`);
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts: [imagePart, textPart] },
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+            responseSchema: schemaConfig,
+          },
+        });
+        if (response && response.text) {
+          console.log(`Sucesso na extração com modelo: ${modelName}`);
+          break;
+        }
+      } catch (modelErr: any) {
+        lastError = modelErr;
+        console.warn(`Aviso: Modelo ${modelName} falhou (${modelErr.message || modelErr}), tentando próximo modelo...`);
+      }
+    }
+
+    if (!response || !response.text) {
+      throw new Error(
+        `Todos os modelos de IA falharam ao processar a foto. Último erro: ${lastError?.message || 'Indisponibilidade momentânea'}`
+      );
     }
 
     let responseText = response.text || '{}';
