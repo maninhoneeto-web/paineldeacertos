@@ -1,4 +1,4 @@
-eu tanto sumiu com server ts e agora nada muda la a mesam cois asobr mais nao calcula 
+ 
   import { GoogleGenAI, Type } from '@google/genai';
 
 export const config = {
