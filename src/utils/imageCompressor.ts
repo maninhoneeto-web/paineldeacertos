@@ -24,7 +24,7 @@ export async function calcularHashImagem(buffer: ArrayBuffer): Promise<string> {
 /**
  * Reduz a imagem proporcionalmente mantendo resolução ideal para leitura de OCR manuscrito
  */
-export async function comprimirImagem(file: File, maxDimensao = 1600, qualidade = 0.85): Promise<ImagemProcessada> {
+export async function comprimirImagem(file: File, maxDimensao = 2600, qualidade = 0.94): Promise<ImagemProcessada> {
   const arrayBuffer = await file.arrayBuffer();
   const hash = await calcularHashImagem(arrayBuffer);
 

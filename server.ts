@@ -56,31 +56,38 @@ app.post('/api/gemini/extract-receipt', async (req: Request, res: Response) => {
     }
 
     const systemPrompt = `Você é o melhor contador e auditor financeiro especialista em acertos de obras, cadernos financeiros, propostas comerciais e orçamentos do Brasil.
-Sua especialidade é analisar fotos de cadernos de acertos de obras manuscritos, folhas com colunas divididas por pessoa (ex: colunas para Neto, Victor, etc.), notas de despesas de equipes, comprovantes de Pix, recibos manuais e propostas de CFTV/serviços.
+Sua especialidade é transcrever fielmente fotos de cadernos de obras manuscritos, folhas de acertos, recibos, propostas e notas fiscais, TRANSFORMANDO CADA LINHA ESCRITA NA FOTO EM UM ITEM DE UMA TABELA CONTÁBIL.
 
-INSTRUÇÕES RIGOROSAS DE DISTRIBUIÇÃO E AUDITORIA:
-1. RECONHECIMENTO DE PESSOAS E COLUNAS:
-   - Cadernos de obra frequentemente organizam as contas em colunas ou blocos separados para cada pessoa (ex: uma coluna ou seção com o nome "Neto", outra com "Victor", etc.).
-   - Identifique TODAS AS PESSOAS encontradas no documento e liste em 'todasPessoasIdentificadas'.
-   - Cada linha ou anotação que estiver abaixo do nome ou na coluna de uma pessoa DEVE OBRIGATORIAMENTE ter o campo 'pessoaSugerida' preenchido com o nome exato dessa pessoa.
-   - Pessoas conhecidas já cadastradas no acerto: ${knownPersons.join(', ') || 'Neto, Victor'}. Se a anotação corresponder a uma delas, use o mesmo nome.
+MISSÃO CRÍTICA E OBRIGATÓRIA:
+TRANSFORMAR TUDO O QUE ESTIVER ESCRITO NA FOTO EM UMA TABELA COMPLETA DE ITENS, DESCRIÇÕES E VALORES!
+NÃO RESUMA, NÃO OMITA, NÃO AGRUPE!
+Se a foto tiver 5, 10, 20 ou 50 itens/anotações na folha, EXTRAIA CADA UMA DELAS PARA A LISTA 'linhas'!
 
-2. CLASSIFICAÇÃO RIGOROSA DE DESPESAS, ADIANTAMENTOS E MATERIAIS ('tipoSugerido'):
-   - 'adiantamento': OBRIGATÓRIO para qualquer item que represente VALE, ADIANTAMENTO, RETIRADA, 'PEGOU', 'ADIANTADO', 'VALE PIX', 'VALE EM DINHEIRO' recebido por uma pessoa.
-   - 'saida': OBRIGATÓRIO para despesas pagas pela obra ou pela pessoa (diárias de ajudante, alimentação/almoço/café, combustível/gasolina, pedágio, transporte, pequenos serviços).
-   - 'material': OBRIGATÓRIO para materiais de instalação, cabos, câmeras, conectores, fontes, dvr, parafusos, cimento, fios, ferramentas e compras de obra.
-   - 'entrada': OBRIGATÓRIO para valores recebidos (adiantamento do cliente da obra, pagamentos recebidos, medições, faturamento).
-   - 'divida': para fiados ou contas pendentes a pagar.
+1. EXTRAÇÃO DE ITENS E VALORES:
+   - 'descricao': nome do item, produto, equipamento, serviço, vale ou despesa como escrito na foto (ex: "Câmera Bullet", "Cabo de rede", "Conector BNC", "Almoço", "Gasolina", "Vale Neto", "Diária ajudante", "Fonte 12V", "Cimento").
+   - 'valorCentavos': número inteiro em centavos de Real.
+     * Ex: 10 => 1000 (R$ 10,00)
+     * Ex: 50 => 5000 (R$ 50,00)
+     * Ex: 150,00 => 15000 (R$ 150,00)
+     * Ex: 601 => 60100 (R$ 601,00)
+     * Ex: 1.200,00 => 120000 (R$ 1.200,00)
+   - 'quantidade': quantidade numérica se indicada (ex: 4 câmeras => quantidade: 4; padrão: 1).
+   - 'valorOriginalTexto': o texto exato do valor como visto na imagem (ex: "R$ 150,00", "50", "601").
 
-3. EXTRAÇÃO COMPLETA DE TODOS OS ITENS:
-   - Extraia CADA LINHA ou item visível na imagem. NUNCA resuma ou omita itens.
-   - 'valorCentavos': número inteiro em centavos de Real (ex: R$ 150,00 => 15000; R$ 601,00 => 60100; R$ 12,50 => 1250).
-   - 'quantidade': número de itens (padrão 1).
+2. CLASSIFICAÇÃO RIGOROSA ('tipoSugerido'):
+   - 'adiantamento': OBRIGATÓRIO para qualquer item que represente VALE, ADIANTAMENTO, RETIRADA, 'PEGOU', 'ADIANTADO', 'VALE PIX', 'VALE EM DINHEIRO'.
+   - 'saida': OBRIGATÓRIO para despesas operacionais da obra (almoço, café, gasolina, diária de mão de obra, pedágio, transporte).
+   - 'material': OBRIGATÓRIO para compras de equipamentos, cabos, câmeras, conectores, fontes, dvr, ferramentas, parafusos, tubulações e materiais de instalação.
+   - 'entrada': OBRIGATÓRIO para valores recebidos (adiantamento do cliente, sinal, medições, pagamentos recebidos).
+   - 'divida': para contas pendentes ou fiados.
+
+3. RECONHECIMENTO DE PESSOAS E COLUNAS:
+   - Se o caderno estiver organizado em colunas ou blocos separados por pessoa (ex: bloco do "Neto", bloco do "Victor"), atribua 'pessoaSugerida' para CADA item com o nome da respectiva pessoa!
+   - Identifique todas as pessoas encontradas e liste em 'todasPessoasIdentificadas'.
+   - Pessoas conhecidas: ${knownPersons.join(', ') || 'Neto, Victor'}.
 
 4. TOTAIS E CÁLCULOS:
-   - Se a folha tiver somatórios ou subtotais manuscritos (ex: 'Total Neto', 'Total Geral', 'Soma'), informe em 'totalEscritoNaAnotacaoCentavos' e 'totalEscritoFormatado'.
-
-5. Forneça observações contábeis claras indicando o total de despesas, vales e a distribuição identificada na foto.`;
+   - Se houver somatório escrito na folha, informe em 'totalEscritoNaAnotacaoCentavos'.`;
 
     const imagePart = {
       inlineData: {
@@ -90,7 +97,7 @@ INSTRUÇÕES RIGOROSAS DE DISTRIBUIÇÃO E AUDITORIA:
     };
 
     const textPart = {
-      text: `Analise cuidadosamente esta foto de folha de acerto ou comprovante. Faça a separação de cada pessoa (Neto, Victor, etc.), identifique rigorosamente o que é DESPESA, o que é ADIANTAMENTO/VALE e o que é MATERIAL, e extraia cada linha com a pessoa correspondente ('pessoaSugerida') e o valor correto em centavos.`,
+      text: `Transcreva cuidadosamente tudo o que estiver escrito nesta foto de folha de acerto/caderno. Transforme cada anotação em uma linha da tabela com descrição exata, valor correto em centavos, tipo (saida, adiantamento, material, entrada) e pessoa correspondente.`,
     };
 
     const schemaConfig = {
@@ -124,10 +131,6 @@ INSTRUÇÕES RIGOROSAS DE DISTRIBUIÇÃO E AUDITORIA:
         dataGeral: {
           type: Type.STRING,
           description: 'Data geral do documento no formato YYYY-MM-DD',
-        },
-        pessoaSugeridaGeral: {
-          type: Type.STRING,
-          description: 'Nome da pessoa mencionada no documento (pagador, beneficiário, cliente, etc.)',
         },
         observacoes: {
           type: Type.STRING,
@@ -187,12 +190,8 @@ INSTRUÇÕES RIGOROSAS DE DISTRIBUIÇÃO E AUDITORIA:
                 type: Type.STRING,
                 description: 'Nome da loja ou fornecedor se for material',
               },
-              dividaDeQuem: {
-                type: Type.STRING,
-                description: 'Se tipo for divida: "eu_devo" ou "me_devem"',
-              },
             },
-            required: ['descricao', 'valorCentavos', 'tipoSugerido', 'confianca'],
+            required: ['descricao', 'valorCentavos', 'tipoSugerido'],
           },
         },
       },
@@ -210,7 +209,7 @@ INSTRUÇÕES RIGOROSAS DE DISTRIBUIÇÃO E AUDITORIA:
 
     for (const modelName of candidateModels) {
       try {
-        console.log(`Tentando extração de foto com modelo: ${modelName}`);
+        console.log(`Tentando extração de foto com modelo: ${modelName} (com schema)`);
         response = await ai.models.generateContent({
           model: modelName,
           contents: { parts: [imagePart, textPart] },
@@ -226,13 +225,30 @@ INSTRUÇÕES RIGOROSAS DE DISTRIBUIÇÃO E AUDITORIA:
         }
       } catch (modelErr: any) {
         lastError = modelErr;
-        console.warn(`Aviso: Modelo ${modelName} falhou (${modelErr.message || modelErr}), tentando próximo modelo...`);
+        console.warn(`Aviso: Modelo ${modelName} falhou com schema (${modelErr.message || modelErr}), tentando sem schema restritivo...`);
+
+        try {
+          response = await ai.models.generateContent({
+            model: modelName,
+            contents: { parts: [imagePart, textPart] },
+            config: {
+              systemInstruction: systemPrompt,
+              responseMimeType: 'application/json',
+            },
+          });
+          if (response && response.text) {
+            console.log(`Sucesso na extração sem schema com modelo: ${modelName}`);
+            break;
+          }
+        } catch (innerErr) {
+          lastError = innerErr;
+        }
       }
     }
 
     if (!response || !response.text) {
       throw new Error(
-        `Todos os modelos de IA falharam ao processar a foto. Último erro: ${lastError?.message || 'Indisponibilidade momentânea'}`
+        `Falha ao processar a imagem com a IA. Detalhes: ${lastError?.message || 'Tente novamente.'}`
       );
     }
 
