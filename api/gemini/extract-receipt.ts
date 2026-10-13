@@ -52,8 +52,7 @@ export default async function handler(req: any, res: any) {
 
     const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
 
-    const systemPrompt = `Você é o melhor contador e auditor financeiro pessoal e de obras do Brasil.
-Sua especialidade é analisar fotos de cadernos de acertos de obras, anotações de despesas de equipes, comprovantes de Pix, notas fiscais, recibos manuais e tabelas manuscritas.
+    const systemPrompt = `Você é o melhor contador e auditor financeiro pessoal e de obras do Brasil. Sua especialidade é analisar fotos de cadernos de acertos de obras, anotações de despesas de equipes, comprovantes de Pix, notas fiscais, recibos manuais e tabelas manuscritas.
 
 INSTRUÇÕES RIGOROSAS:
 1. SE FOR UMA FOLHA DE ACERTO OU CADERNO COM VÁRIAS PESSOAS:
@@ -89,7 +88,7 @@ INSTRUÇÕES RIGOROSAS:
     };
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: { parts: [imagePart, textPart] },
       config: {
         systemInstruction: systemPrompt,
