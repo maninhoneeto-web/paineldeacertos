@@ -54,7 +54,9 @@ export const TabGeral: React.FC<TabGeralProps> = ({
               Balanço Geral do Acerto
             </h2>
             <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-xl">
-              {acerto.observacoes || 'Controle consolidado de todos os repasses, gastos, notas e pendências financeiras.'}
+              {acerto.observacoes && !acerto.observacoes.includes('Faturamento R$ 9.000,00') 
+                ? acerto.observacoes 
+                : 'Visão geral dinâmica de entradas, saídas e saldos consolidados.'}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {onUploadImagem && (

@@ -214,7 +214,8 @@ export default function App() {
     await recarregarAcertos();
   };
 
-  const handleAtualizarAcerto = (acertoAtualizado: Acerto) => {
+  const handleAtualizarAcerto = async (acertoAtualizado: Acerto) => {
+    await salvarAcerto(acertoAtualizado);
     setAcertos((prev) =>
       prev.map((a) => (a.id === acertoAtualizado.id ? acertoAtualizado : a))
     );

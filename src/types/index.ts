@@ -34,8 +34,9 @@ export interface ParticipanteLucro {
 }
 
 export interface ConfigDivisaoLucros {
-  faturamentoProjetoCentavos?: number; // Valor fixo inicial da entrada (padrão R$ 9.000,00 = 900000)
-  taxaProjetoCentavos?: number; // Dedução automática da Taxa de Projeto (padrão R$ 1.000,00 = 100000)
+  usarPrecoFixo?: boolean; // Se true, usa o faturamento/taxa configurados; se false, calcula 100% dinâmico das entradas reais
+  faturamentoProjetoCentavos?: number; // Valor customizado pelo usuário
+  taxaProjetoCentavos?: number; // Taxa de dedução informada pelo usuário
   reservaEmergenciaPorcentagem: number; // ex: 0 a 50 (%) retido para reinvestimento/fundo de caixa
   participantes: ParticipanteLucro[];
   observacoes?: string;

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { PessoaTab, Lancamento, ImagemComprovante, HistoricoItem, TipoLancamento, Acerto } from '../types';
 import { formatarCentavos, calcularTotaisPessoa } from '../utils/currency';
+import { PhotoZoomModal } from './PhotoZoomModal';
 
 interface TabPessoaProps {
   acerto: Acerto;
@@ -552,31 +553,15 @@ export const TabPessoa: React.FC<TabPessoaProps> = ({
         />
       )}
 
-      {/* MODAL DE IMAGEM AMPLIADA */}
+      {/* MODAL DE IMAGEM AMPLIADA COM ZOOM INTERATIVO */}
       {imagemVisualizacao && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
-          <div className="relative max-w-3xl w-full bg-slate-900 rounded-2xl overflow-hidden p-4">
-            <button
-              onClick={() => setImagemVisualizacao(null)}
-              className="absolute top-4 right-4 p-2 rounded-full bg-black/60 text-white hover:bg-black"
-            >
-              ✕
-            </button>
-            <img
-              src={imagemVisualizacao.dataUrl}
-              alt="Visualização"
-              className="max-h-[80vh] w-auto mx-auto object-contain rounded-lg"
-            />
-            <div className="mt-3 text-center text-white text-xs">
-              <p className="font-bold">{imagemVisualizacao.nomeArquivo}</p>
-              {imagemVisualizacao.totalEscritoCentavos ? (
-                <p className="text-emerald-400 mt-0.5">
-                  Total identificado: {formatarCentavos(imagemVisualizacao.totalEscritoCentavos)}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </div>
+        <PhotoZoomModal
+          isOpen={!!imagemVisualizacao}
+          onClose={() => setImagemVisualizacao(null)}
+          imagemUrl={imagemVisualizacao.dataUrl}
+          titulo={`Comprovante: ${imagemVisualizacao.nomeArquivo}`}
+          subtitulo={`${imagemVisualizacao.tipoDocumentoIdentificado || 'Recibo'} • ${new Date(imagemVisualizacao.createdAt).toLocaleDateString('pt-BR')}${imagemVisualizacao.totalEscritoCentavos ? ` • Total: ${formatarCentavos(imagemVisualizacao.totalEscritoCentavos)}` : ''}`}
+        />
       )}
 
     </div>

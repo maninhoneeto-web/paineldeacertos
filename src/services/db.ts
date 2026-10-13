@@ -83,27 +83,115 @@ export function getDB(): Promise<IDBPDatabase<AcertoFácilDB>> {
 }
 
 // -------------------------------------------------------------
-// OPERAÇÕES: ACERTOS
+// OPERAÇÕES: ACERTOS (COM PERSISTÊNCIA DUPLA INDEXEDDB + LOCALSTORAGE)
 // -------------------------------------------------------------
 
+const SNAPSHOT_KEY_ACERTOS = 'paineldeacertos_backup_acertos_v1';
+
+function sincronizarSnapshotLocalStorage(acerto: Acerto) {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY_ACERTOS);
+    const map: Record<string, Acerto> = raw ? JSON.parse(raw) : {};
+    map[acerto.id] = acerto;
+    localStorage.setItem(SNAPSHOT_KEY_ACERTOS, JSON.stringify(map));
+  } catch (err) {
+    console.warn('Aviso: Falha ao espelhar acerto no localStorage snapshot:', err);
+  }
+}
+
+function removerSnapshotLocalStorage(id: string) {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY_ACERTOS);
+    if (raw) {
+      const map: Record<string, Acerto> = JSON.parse(raw);
+      delete map[id];
+      localStorage.setItem(SNAPSHOT_KEY_ACERTOS, JSON.stringify(map));
+    }
+  } catch (err) {
+    console.warn('Aviso: Falha ao remover acerto do snapshot:', err);
+  }
+}
+
 export async function listarAcertos(): Promise<Acerto[]> {
-  const db = await getDB();
-  const list = await db.getAll('acertos');
-  return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  try {
+    const db = await getDB();
+    const list = await db.getAll('acertos');
+
+    // Reconciliação: se o localStorage tiver acertos que não estão no IndexedDB, restaura automaticamente
+    try {
+      const raw = localStorage.getItem(SNAPSHOT_KEY_ACERTOS);
+      if (raw) {
+        const snapshotMap: Record<string, Acerto> = JSON.parse(raw);
+        for (const snap of Object.values(snapshotMap)) {
+          if (!list.some((a) => a.id === snap.id)) {
+            await db.put('acertos', snap);
+            list.push(snap);
+          }
+        }
+      }
+    } catch {}
+
+    // Mantém o snapshot no localStorage sempre atualizado com a lista
+    try {
+      const map: Record<string, Acerto> = {};
+      list.forEach((a) => {
+        map[a.id] = a;
+      });
+      localStorage.setItem(SNAPSHOT_KEY_ACERTOS, JSON.stringify(map));
+    } catch {}
+
+    return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  } catch (err) {
+    console.warn('Falha no IndexedDB ao listarAcertos, usando snapshot local:', err);
+    try {
+      const raw = localStorage.getItem(SNAPSHOT_KEY_ACERTOS);
+      if (raw) {
+        const snapshotMap: Record<string, Acerto> = JSON.parse(raw);
+        return Object.values(snapshotMap).sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+      }
+    } catch {}
+    return [];
+  }
 }
 
 export async function obterAcerto(id: string): Promise<Acerto | undefined> {
-  const db = await getDB();
-  return db.get('acertos', id);
+  try {
+    const db = await getDB();
+    const acerto = await db.get('acertos', id);
+    if (acerto) return acerto;
+  } catch (err) {
+    console.warn('Aviso IndexedDB obterAcerto:', err);
+  }
+
+  // Fallback para snapshot
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY_ACERTOS);
+    if (raw) {
+      const snapshotMap: Record<string, Acerto> = JSON.parse(raw);
+      return snapshotMap[id];
+    }
+  } catch {}
+  return undefined;
 }
 
 export async function salvarAcerto(acerto: Acerto): Promise<void> {
-  const db = await getDB();
   acerto.updatedAt = new Date().toISOString();
-  await db.put('acertos', acerto);
+  // 1. Salva no snapshot síncrono para garantir durabilidade instantânea
+  sincronizarSnapshotLocalStorage(acerto);
+
+  // 2. Salva no IndexedDB
+  try {
+    const db = await getDB();
+    await db.put('acertos', acerto);
+  } catch (err) {
+    console.error('Erro ao salvar acerto no IndexedDB (snapshot mantido):', err);
+  }
 }
 
 export async function excluirAcerto(id: string): Promise<void> {
+  removerSnapshotLocalStorage(id);
   const db = await getDB();
   const tx = db.transaction(['acertos', 'lancamentos', 'imagens', 'historico'], 'readwrite');
   
@@ -378,31 +466,50 @@ export async function importarBackup(jsonString: string): Promise<{ acertosCount
 
 export async function inicializarDadosSeNecessario(): Promise<void> {
   const acertos = await listarAcertos();
-  if (acertos.length > 0) return;
+  if (acertos.length > 0) {
+    // Sanitização de observações legadas com estimativas fixas de texto
+    const cftv = acertos.find((a) => a.id === 'acerto_nds_cftv_digital');
+    if (cftv && cftv.observacoes?.includes('Faturamento R$ 9.000,00')) {
+      cftv.observacoes = 'Fechamento financeiro NDS CFTV Digital';
+      await salvarAcerto(cftv);
+    }
+    return;
+  }
 
   const hoje = new Date().toISOString().slice(0, 10);
-  const acertoId = 'acerto_demo_obra_1';
+  const acertoId = 'acerto_nds_cftv_digital';
 
   const demoAcerto: Acerto = {
     id: acertoId,
-    titulo: 'Reforma Comercial & Obra Galpão Sul',
+    titulo: 'NDS CFTV Digital - Fechamento & Divisão de Lucros',
     dataInicio: hoje,
     status: 'aberto',
-    observacoes: 'Controle de adiantamentos da equipe, compra de materiais na Loja Silva e acerto semanal.',
+    observacoes: 'Fechamento financeiro NDS CFTV Digital',
     pessoas: [
-      { id: 'p_joao', nome: 'João Pedreiro', papel: 'Empreiteiro', cor: '#059669', ordem: 0 },
-      { id: 'p_maria', nome: 'Maria Pintora', papel: 'Acabamento', cor: '#7c3aed', ordem: 1 },
-      { id: 'p_loja', nome: 'Loja Silva Materiais', papel: 'Fornecedor', cor: '#d97706', ordem: 2 },
+      { id: 'p_neto', nome: 'Neto', papel: 'Sócio', cor: '#059669', ordem: 0 },
+      { id: 'p_victor', nome: 'Victor', papel: 'Sócio', cor: '#0284c7', ordem: 1 },
     ],
     categorias: [
       'Mão de Obra',
       'Material de Construção',
+      'Adiantamento/Val',
       'Alimentação',
       'Combustível',
       'Ferramentas',
       'Transporte',
       'Outros',
     ],
+    configDivisaoLucros: {
+      usarPrecoFixo: true,
+      faturamentoProjetoCentavos: 900000, // R$ 9.000,00
+      taxaProjetoCentavos: 100000,        // R$ 1.000,00 (Base: R$ 8.000,00)
+      reservaEmergenciaPorcentagem: 0,
+      participantes: [
+        { id: 'part_neto', pessoaId: 'p_neto', nome: 'Neto', porcentagem: 50, descontarAdiantamentos: true },
+        { id: 'part_victor', pessoaId: 'p_victor', nome: 'Victor', porcentagem: 50, descontarAdiantamentos: true },
+      ],
+      observacoes: '',
+    },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -410,75 +517,32 @@ export async function inicializarDadosSeNecessario(): Promise<void> {
   await salvarAcerto(demoAcerto);
 
   const lancamentosIniciais: Lancamento[] = [
-    // João: adiantamento recebido de R$ 800,00
+    // Saída/Gasto da obra (Ex: Materiais para CFTV)
     {
-      id: 'lanc_1',
+      id: 'lanc_cftv_materiais',
       acertoId,
-      pessoaId: 'p_joao',
-      tipo: 'adiantamento',
-      data: hoje,
-      descricao: 'Adiantamento semanal (Vale Pix)',
-      valorCentavos: 80000,
-      abatidoCentavos: 0,
-      observacaoAdiantamento: 'Repasse adiantado para semana 1',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    // João: despesa com ferramentas R$ 150,00 que ele pagou do bolso
-    {
-      id: 'lanc_2',
-      acertoId,
-      pessoaId: 'p_joao',
+      pessoaId: 'p_neto',
       tipo: 'saida',
       data: hoje,
-      descricao: 'Discos de corte e brocas comprados na ferragem',
-      valorCentavos: 15000,
-      categoria: 'Ferramentas',
-      quemPagou: 'João',
+      descricao: 'Cabos UTP, conectores BNC e baluns para CFTV',
+      valorCentavos: 45000, // R$ 450,00
+      categoria: 'Material de Construção',
+      formaPagamento: 'Pix',
+      quemPagou: 'Neto',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
-    // Maria: adiantamento de R$ 400,00
+    // Adiantamento/Val para Neto de R$ 601,00 (Itatiaia)
     {
-      id: 'lanc_3',
+      id: 'lanc_vale_neto_601',
       acertoId,
-      pessoaId: 'p_maria',
+      pessoaId: 'p_neto',
       tipo: 'adiantamento',
       data: hoje,
-      descricao: 'Adiantamento de início de pintura',
-      valorCentavos: 40000,
-      abatidoCentavos: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    // Loja Silva: Material comprado com nota
-    {
-      id: 'lanc_4',
-      acertoId,
-      pessoaId: 'p_loja',
-      tipo: 'material',
-      data: hoje,
-      descricao: '20 sacos de cimento CP-II e 3m areia média',
-      item: 'Cimento CP-II 50kg',
-      quantidade: 20,
-      valorUnitarioCentavos: 3850,
-      valorCentavos: 77000,
-      loja: 'Loja Silva Materiais',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    // Loja Silva: Dívida a pagar (boleto a vencer)
-    {
-      id: 'lanc_5',
-      acertoId,
-      pessoaId: 'p_loja',
-      tipo: 'divida',
-      data: hoje,
-      descricao: 'Boleto faturado para 15 dias ref. cimento',
-      valorCentavos: 77000,
-      vencimento: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
-      statusDivida: 'pendente',
-      direcaoDivida: 'eu_devo',
+      descricao: 'Adiantamento/Val (Itatiaia)',
+      valorCentavos: 60100, // R$ 601,00
+      categoria: 'Adiantamento/Val',
+      observacaoAdiantamento: 'Adiantamento pessoal debitado exclusivamente do saldo a receber do Neto. Não diminui a base de cálculo nem afeta o valor do Victor.',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -490,6 +554,6 @@ export async function inicializarDadosSeNecessario(): Promise<void> {
     acertoId,
     acao: 'criacao',
     tipoItem: 'acerto',
-    detalhes: 'Acerto inicial de demonstração criado com sucesso.',
+    detalhes: 'Fechamento financeiro NDS CFTV Digital inicializado com sucesso.',
   });
 }

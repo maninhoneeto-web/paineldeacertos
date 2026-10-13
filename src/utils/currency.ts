@@ -274,12 +274,7 @@ export function calcularDivisaoLucros(
 ): import('../types').CalculoDivisaoLucros {
   const config = configCustom || acerto.configDivisaoLucros;
 
-  // 1. Faturamento do Projeto (Padrão R$ 9.000,00 = 900.000 centavos)
-  let faturamentoProjetoCentavos = config?.faturamentoProjetoCentavos !== undefined
-    ? config.faturamentoProjetoCentavos
-    : 900000;
-
-  // Se houver entradas explícitas registradas que superem ou configurem o projeto
+  // Soma de entradas, saídas e materiais lançados
   let totalEntradasLancadasCentavos = 0;
   let totalSaidasDespesasCentavos = 0;
   let totalMateriaisCentavos = 0;
@@ -295,20 +290,27 @@ export function calcularDivisaoLucros(
     }
   }
 
-  // Se o usuário lançou entradas maiores que 0 e não definiu manualmente faturamento, podemos usar as entradas registradas
-  if (config?.faturamentoProjetoCentavos === undefined && totalEntradasLancadasCentavos > 0) {
+  // 1. Faturamento do Projeto:
+  // Se o usuário marcou usarPrecoFixo ou informou um faturamento (> 0), usa o que ele definiu.
+  // Caso contrário, calcula de forma 100% DINÂMICA a partir das entradas reais registradas!
+  const isPrecoDefinidoPeloUsuario = config?.usarPrecoFixo === true || (config?.faturamentoProjetoCentavos !== undefined && config.faturamentoProjetoCentavos > 0);
+
+  let faturamentoProjetoCentavos = 0;
+  let taxaProjetoCentavos = 0;
+
+  if (isPrecoDefinidoPeloUsuario) {
+    faturamentoProjetoCentavos = config?.faturamentoProjetoCentavos ?? 0;
+    taxaProjetoCentavos = config?.taxaProjetoCentavos ?? 0;
+  } else {
+    // 100% DINÂMICO
     faturamentoProjetoCentavos = totalEntradasLancadasCentavos;
+    taxaProjetoCentavos = config?.taxaProjetoCentavos ?? 0;
   }
 
-  // 2. Taxa de Projeto deduzida automaticamente (Padrão R$ 1.000,00 = 100.000 centavos)
-  const taxaProjetoCentavos = config?.taxaProjetoCentavos !== undefined
-    ? config.taxaProjetoCentavos
-    : 100000;
-
-  // Base de Cálculo Real = Faturamento - Taxa de Projeto (Padrão R$ 8.000,00 = 800.000 centavos)
+  // Base de Cálculo Real = Faturamento - Taxa de Projeto
   const baseCalculoRealCentavos = Math.max(0, faturamentoProjetoCentavos - taxaProjetoCentavos);
 
-  // 3. Soma de Todas as Saídas (despesas operacionais + materiais da lista, sem adiantamentos pessoais)
+  // Soma de Todas as Saídas (despesas operacionais + materiais da lista, sem adiantamentos pessoais)
   const somaTodasSaidasCentavos = totalSaidasDespesasCentavos + totalMateriaisCentavos;
 
   // 4. Lucro Líquido Real = Base de Cálculo Real - Soma de Todas as Saídas

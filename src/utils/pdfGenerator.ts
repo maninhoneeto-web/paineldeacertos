@@ -97,26 +97,35 @@ export async function gerarRelatorioPDF(
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(`1. Entrada (Faturamento): ${formatarCentavos(calculoLucro.faturamentoProjetoCentavos)}`, 18, cursorY + 14);
-  doc.text(`2. Taxa de Projeto: -${formatarCentavos(calculoLucro.taxaProjetoCentavos)}`, 78, cursorY + 14);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(3, 105, 161); // Blue
-  doc.text(`Base de Cálculo Real: ${formatarCentavos(calculoLucro.baseCalculoRealCentavos)}`, 135, cursorY + 14);
+
+  if (calculoLucro.taxaProjetoCentavos > 0) {
+    doc.text(`1. Faturamento / Entrada: ${formatarCentavos(calculoLucro.faturamentoProjetoCentavos)}`, 18, cursorY + 14);
+    doc.text(`2. Taxa de Projeto: -${formatarCentavos(calculoLucro.taxaProjetoCentavos)}`, 78, cursorY + 14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(3, 105, 161);
+    doc.text(`Base de Cálculo Real: ${formatarCentavos(calculoLucro.baseCalculoRealCentavos)}`, 135, cursorY + 14);
+  } else {
+    doc.text(`1. Receita Total (Entradas): ${formatarCentavos(calculoLucro.faturamentoProjetoCentavos)}`, 18, cursorY + 14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(3, 105, 161);
+    doc.text(`Base de Cálculo: ${formatarCentavos(calculoLucro.baseCalculoRealCentavos)}`, 110, cursorY + 14);
+  }
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(`3. Total de Gastos (Saídas): ${formatarCentavos(calculoLucro.somaTodasSaidasCentavos)}`, 18, cursorY + 21);
+  doc.text(`Total de Gastos (Saídas): ${formatarCentavos(calculoLucro.somaTodasSaidasCentavos)}`, 18, cursorY + 21);
   doc.setFont('helvetica', 'bold');
   const corLucro = calculoLucro.isLucroPositivo ? [4, 120, 87] : [225, 29, 72];
   doc.setTextColor(corLucro[0], corLucro[1], corLucro[2]);
-  doc.text(`4. Lucro Líquido Real: ${formatarCentavos(calculoLucro.lucroBrutoCentavos)}`, 78, cursorY + 21);
+  doc.text(`Lucro Líquido Real: ${formatarCentavos(calculoLucro.lucroBrutoCentavos)}`, 78, cursorY + 21);
   doc.setTextColor(71, 85, 105);
   doc.setFont('helvetica', 'normal');
-  doc.text(`(Divisão: 50% Neto / 50% Victor)`, 148, cursorY + 21);
+  const nomesSocios = calculoLucro.participantes.map((p) => `${p.porcentagem}% ${p.nome}`).join(' / ');
+  doc.text(`(${nomesSocios || 'Divisão entre Sócios'})`, 140, cursorY + 21);
 
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
-  doc.text(`* Regra: Adiantamentos do Neto são descontados unicamente de sua cota final sem afetar a base ou o sócio Victor.`, 18, cursorY + 28);
+  doc.text(`* Descontos de adiantamentos/vales são deduzidos unicamente da cota final individual sem afetar os outros sócios.`, 18, cursorY + 28);
 
   cursorY += 38;
 

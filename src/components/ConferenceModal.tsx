@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  X, Check, AlertTriangle, AlertCircle, Plus, Trash2, ZoomIn, ZoomOut, RotateCcw, 
+  X, Check, AlertTriangle, AlertCircle, Plus, Trash2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Maximize2,
   ArrowRightLeft, FileText, Calendar, DollarSign, Tag, User, Layers, Info, Sparkles, UserPlus
 } from 'lucide-react';
 import { Acerto, PessoaTab, LinhaConferenciaOCR, TipoLancamento, FormaPagamento, DirecaoDivida } from '../types';
 import { formatarCentavos, parseValorParaCentavos, formatarCentavosSemSimbolo } from '../utils/currency';
+import { PhotoZoomModal } from './PhotoZoomModal';
 
 interface ConferenceModalProps {
   isOpen: boolean;
@@ -62,6 +63,9 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
 }) => {
   const [titulo, setTitulo] = useState(tituloSugerido || 'Acerto Organizado por Foto');
   const [zoom, setZoom] = useState(1);
+  const [rotacao, setRotacao] = useState(0);
+  const [modalZoomAberto, setModalZoomAberto] = useState(false);
+  const [isGerandoPdf, setIsGerandoPdf] = useState(false);
   const [isSalvando, setIsSalvando] = useState(false);
   const [observacoes, setObservacoes] = useState(observacoesOCR);
   const [tipoDoc, setTipoDoc] = useState(tipoDocumentoIdentificado);
@@ -360,42 +364,73 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-hidden min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
           
           {/* COLUNA ESQUERDA: VISUALIZADOR DA IMAGEM COM ZOOM */}
-          <div className="lg:col-span-5 flex flex-col bg-slate-900 overflow-hidden min-h-[260px] lg:min-h-[460px]">
+          <div className="lg:col-span-5 flex flex-col bg-slate-900 overflow-hidden min-h-[280px] lg:min-h-[460px]">
             <div className="flex items-center justify-between px-3 py-2 bg-slate-950/80 text-white text-xs border-b border-slate-800">
-              <span className="text-slate-400">Visualização da Folha / Foto</span>
               <div className="flex items-center gap-1.5">
+                <span className="text-slate-400 font-medium">Folha / Foto</span>
                 <button
-                  onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200"
+                  type="button"
+                  onClick={() => setModalZoomAberto(true)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer"
+                  title="Aumentar imagem e abrir em tela cheia com zoom interativo"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Aumentar Imagem</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(1)))}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
                   title="Diminuir zoom"
                 >
                   <ZoomOut className="w-3.5 h-3.5" />
                 </button>
-                <span className="font-mono text-[11px] px-1">{Math.round(zoom * 100)}%</span>
+                <span className="font-mono text-[11px] px-1 text-slate-300">{Math.round(zoom * 100)}%</span>
                 <button
-                  onClick={() => setZoom((z) => Math.min(2.5, z + 0.2))}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200"
+                  type="button"
+                  onClick={() => setZoom((z) => Math.min(3, +(z + 0.2).toFixed(1)))}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
                   title="Aumentar zoom"
                 >
                   <ZoomIn className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => setZoom(1)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200"
-                  title="Redefinir"
+                  type="button"
+                  onClick={() => setRotacao((r) => (r + 90) % 360)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
+                  title="Girar 90°"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setZoom(1); setRotacao(0); }}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer"
+                  title="Redefinir tamanho e rotação"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-950/40 select-none">
+            <div 
+              onClick={() => setModalZoomAberto(true)}
+              className="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-950/40 select-none cursor-zoom-in relative group"
+              title="Clique para ampliar em tela cheia com zoom e arraste"
+            >
               <img
                 src={imagemDataUrl}
                 alt="Comprovante"
-                style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
+                style={{ transform: `scale(${zoom}) rotate(${rotacao}deg)`, transformOrigin: 'center center' }}
                 className="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-transform duration-150"
               />
+              <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity bg-black/75 text-white text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-xs pointer-events-none">
+                <Maximize2 className="w-3 h-3 text-emerald-400" />
+                <span>Clique para ampliar</span>
+              </div>
             </div>
 
             {totalEscritoFormatado && (
@@ -591,26 +626,129 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
               </div>
 
               {/* Botões de Ação */}
-              <div className="flex items-center justify-end gap-3">
+              <div className="flex items-center justify-end gap-2 sm:gap-3">
+                {/* Botão Salvar em PDF na Conferência */}
+                <button
+                  type="button"
+                  disabled={isGerandoPdf}
+                  onClick={async () => {
+                    setIsGerandoPdf(true);
+                    try {
+                      const { jsPDF } = await import('jspdf');
+                      const { default: autoTable } = await import('jspdf-autotable');
+                      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                      const pageWidth = doc.internal.pageSize.getWidth();
+                      const pageHeight = doc.internal.pageSize.getHeight();
+
+                      // Cabeçalho Corporativo
+                      doc.setFillColor(15, 23, 42);
+                      doc.rect(0, 0, pageWidth, 28, 'F');
+                      doc.setTextColor(255, 255, 255);
+                      doc.setFont('helvetica', 'bold');
+                      doc.setFontSize(14);
+                      doc.text('NDS CFTV DIGITAL', 14, 12);
+
+                      doc.setFont('helvetica', 'normal');
+                      doc.setFontSize(9);
+                      doc.setTextColor(148, 163, 184);
+                      doc.text('Relatório de Conferência de Comprovante & Lançamentos', 14, 18);
+                      doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, 18, { align: 'right' });
+
+                      let cursorY = 36;
+                      doc.setTextColor(15, 23, 42);
+                      doc.setFont('helvetica', 'bold');
+                      doc.setFontSize(11);
+                      doc.text(titulo || 'Conferência de Comprovante', 14, cursorY);
+                      cursorY += 5;
+
+                      doc.setFont('helvetica', 'normal');
+                      doc.setFontSize(8);
+                      doc.setTextColor(100, 116, 139);
+                      doc.text(`Arquivo: ${nomeArquivo} | Tipo: ${tipoDoc} | Total Saídas: ${formatarCentavos(totalSaidas)}`, 14, cursorY);
+                      cursorY += 6;
+
+                      // Tabela dos lançamentos
+                      const linhasParaExportar = linhas.filter((l) => l.incluir);
+                      const rows = linhasParaExportar.map((l) => [
+                        l.data ? new Date(l.data + 'T12:00:00').toLocaleDateString('pt-BR') : '-',
+                        l.descricao || 'Item sem descrição',
+                        pessoas.find((p) => p.id === l.pessoaId)?.nome || 'Geral',
+                        l.categoria || 'Geral',
+                        l.tipoSugerido === 'adiantamento' ? 'Adiantamento/Val' : l.tipoSugerido.toUpperCase(),
+                        formatarCentavos(l.valorCentavos),
+                      ]);
+
+                      autoTable(doc, {
+                        startY: cursorY,
+                        head: [['Data', 'Descrição', 'Pessoa', 'Categoria', 'Tipo', 'Valor']],
+                        body: rows,
+                        theme: 'striped',
+                        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+                        styles: { fontSize: 8, cellPadding: 2 },
+                        columnStyles: {
+                          5: { halign: 'right', fontStyle: 'bold' },
+                        },
+                      });
+
+                      cursorY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : cursorY + 40;
+
+                      // Foto do Comprovante anexada
+                      if (cursorY + 110 > pageHeight - 15) {
+                        doc.addPage();
+                        cursorY = 20;
+                      }
+
+                      doc.setFont('helvetica', 'bold');
+                      doc.setFontSize(10);
+                      doc.setTextColor(15, 23, 42);
+                      doc.text('Anexo: Foto do Comprovante', 14, cursorY);
+                      cursorY += 5;
+
+                      try {
+                        doc.addImage(imagemDataUrl, 'JPEG', 14, cursorY, 110, 85, undefined, 'FAST');
+                      } catch (errImg) {
+                        console.warn('Erro ao anexar imagem ao PDF:', errImg);
+                      }
+
+                      doc.setFontSize(8);
+                      doc.setTextColor(148, 163, 184);
+                      doc.text('NDS CFTV Digital - Documento Contábil', 14, pageHeight - 8);
+
+                      doc.save(`nds_conferencia_${Date.now()}.pdf`);
+                    } catch (errPdf: any) {
+                      console.error(errPdf);
+                      alert('Erro ao exportar PDF: ' + errPdf.message);
+                    } finally {
+                      setIsGerandoPdf(false);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm border border-slate-300 dark:border-slate-700 transition cursor-pointer"
+                  title="Salvar esta conferência e comprovante em PDF"
+                >
+                  <FileText className="w-4 h-4 text-emerald-600" />
+                  <span>{isGerandoPdf ? 'Gerando...' : 'Salvar em PDF'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 rounded-xl text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="button"
                   onClick={handleSalvar}
                   disabled={isSalvando || linhas.length === 0}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
                   {isSalvando ? (
-                    <span className="animate-spin">⏳ Salvando e organizando...</span>
+                    <span className="animate-spin">⏳ Salvando...</span>
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>{isCriandoNovoAcerto ? 'Criar Acerto Completo Organizado' : `Confirmar e Lançar (${linhas.filter((l) => l.incluir).length})`}</span>
+                      <span>{isCriandoNovoAcerto ? 'Criar Acerto Completo' : `Confirmar (${linhas.filter((l) => l.incluir).length})`}</span>
                     </>
                   )}
                 </button>
@@ -622,6 +760,15 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
         </div>
 
       </div>
+
+      {/* MODAL DE ZOOM INTERATIVO EM TELA CHEIA */}
+      <PhotoZoomModal
+        isOpen={modalZoomAberto}
+        onClose={() => setModalZoomAberto(false)}
+        imagemUrl={imagemDataUrl}
+        titulo={`Comprovante: ${nomeArquivo}`}
+        subtitulo={tipoDoc}
+      />
     </div>
   );
 };

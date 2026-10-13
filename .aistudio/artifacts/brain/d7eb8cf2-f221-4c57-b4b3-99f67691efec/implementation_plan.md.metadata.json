@@ -1,0 +1,6 @@
+{
+  "summary": "Plano detalhado de implementação para correção da persistência dos acertos (IndexedDB + espelhamento automático), upload resiliente com visualizador de zoom interativo e tela cheia para comprovantes, e botão proeminente 'Salvar em PDF' com anexos fotográficos e layout contábil corporativo da NDS CFTV Digital.",
+  "updatedAt": "2026-10-13T12:56:07.463708639Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

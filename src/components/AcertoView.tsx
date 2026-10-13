@@ -153,23 +153,47 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
       setStatusProcessamentoTexto('Verificando histórico e duplicidades...');
       const duplicada = await verificarImagemDuplicada(acerto.id, imagemProcessada.hash);
 
-      setStatusProcessamentoTexto('Consultando inteligência do Gemini para ler o comprovante...');
-
       const nomesPessoas = acerto.pessoas.map((p) => p.nome);
       const pessoaAtual = acerto.pessoas.find((p) => p.id === abaAtiva)?.nome || '';
 
-      const ocr = await extrairDadosAcertoComGemini({
-        imageBase64: imagemProcessada.dataUrl,
-        mimeType: 'image/jpeg',
-        knownPersons: nomesPessoas,
-        currentPerson: pessoaAtual,
-      });
+      let ocr: any;
+      try {
+        ocr = await extrairDadosAcertoComGemini({
+          imageBase64: imagemProcessada.dataUrl,
+          mimeType: 'image/jpeg',
+          knownPersons: nomesPessoas,
+          currentPerson: pessoaAtual,
+        });
+      } catch (ocrErr: any) {
+        console.warn('Leitura da IA indisponível ou falhou, mantendo a foto para conferência manual:', ocrErr);
+        ocr = {
+          tipoDocumento: 'Comprovante / Recibo',
+          estabelecimentoOuLoja: '',
+          dataGeral: new Date().toISOString().slice(0, 10),
+          totalEscritoNaAnotacaoCentavos: 0,
+          totalEscritoFormatado: '',
+          todasPessoasIdentificadas: [],
+          linhas: [
+            {
+              descricao: 'Despesa do comprovante',
+              quantidade: 1,
+              valorCentavos: 0,
+              tipoSugerido: 'saida',
+              categoria: acerto.categorias[0] || 'Geral',
+              formaPagamento: 'Pix',
+              pessoaSugerida: pessoaAtual || acerto.pessoas[0]?.nome || 'Geral',
+              confianca: 'alta',
+            },
+          ],
+          observacoes: 'Foto anexada com sucesso. Verifique ou digite os dados ao lado com auxílio do botão Aumentar Imagem.',
+        };
+      }
 
       const cores = ['#059669', '#0284c7', '#7c3aed', '#d97706', '#dc2626', '#4f46e5', '#0d9488'];
       const pessoasAtualizadas: PessoaTab[] = [...acerto.pessoas];
 
       // Adiciona quaisquer novas pessoas identificadas pela IA na folha/foto
-      (ocr.todasPessoasIdentificadas || []).forEach((nome) => {
+      (ocr.todasPessoasIdentificadas || []).forEach((nome: string) => {
         const nomeTrim = nome.trim();
         if (nomeTrim && !pessoasAtualizadas.some((p) => p.nome.toLowerCase() === nomeTrim.toLowerCase())) {
           pessoasAtualizadas.push({
@@ -182,7 +206,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
       });
 
       // Monta as linhas para a tela de conferência
-      const linhasConferencia: LinhaConferenciaOCR[] = (ocr.linhas || []).map((l, idx) => {
+      const linhasConferencia: LinhaConferenciaOCR[] = (ocr.linhas || []).map((l: any, idx: number) => {
         let idPessoaDestino = abaAtiva !== 'geral' ? abaAtiva : pessoasAtualizadas[0]?.id || 'geral';
         if (l.pessoaSugerida) {
           const match = pessoasAtualizadas.find((p) =>
@@ -565,7 +589,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
                       materiais: true,
                       dividas: true,
                     },
-                    incluirImagens: false,
+                    incluirImagens: true,
                     incluirAbaGeral: true,
                     incluirDivisaoLucros: true,
                   });
