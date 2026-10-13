@@ -205,27 +205,62 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
         }
       });
 
-      // Monta as linhas para a tela de conferência
+      // Monta as linhas para a tela de conferência com detecção de despesas, adiantamentos e pessoas
       const linhasConferencia: LinhaConferenciaOCR[] = (ocr.linhas || []).map((l: any, idx: number) => {
-        let idPessoaDestino = abaAtiva !== 'geral' ? abaAtiva : pessoasAtualizadas[0]?.id || 'geral';
-        if (l.pessoaSugerida) {
+        let idPessoaDestino = '';
+        let nomePessoaDetectada = l.pessoaSugerida ? l.pessoaSugerida.trim() : '';
+
+        // 1. Tenta identificar se o nome da pessoa está em l.pessoaSugerida
+        if (nomePessoaDetectada) {
           const match = pessoasAtualizadas.find((p) =>
-            p.nome.toLowerCase().includes(l.pessoaSugerida!.toLowerCase()) ||
-            l.pessoaSugerida!.toLowerCase().includes(p.nome.toLowerCase())
+            p.nome.toLowerCase().includes(nomePessoaDetectada.toLowerCase()) ||
+            nomePessoaDetectada.toLowerCase().includes(p.nome.toLowerCase())
           );
           if (match) {
             idPessoaDestino = match.id;
           } else {
-            // Se a linha cita alguém novo que ainda não está na lista, cria
+            // Se a linha cita alguém novo que ainda não está na lista, cria a aba da pessoa
             const novoId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
             pessoasAtualizadas.push({
               id: novoId,
-              nome: l.pessoaSugerida.trim(),
+              nome: nomePessoaDetectada,
               cor: cores[pessoasAtualizadas.length % cores.length],
               ordem: pessoasAtualizadas.length,
             });
             idPessoaDestino = novoId;
           }
+        }
+
+        // 2. Se ainda não achou, procura no texto da descrição se menciona alguma pessoa (ex: "Vale Neto", "Victor almoço")
+        if (!idPessoaDestino && l.descricao) {
+          const descLower = l.descricao.toLowerCase();
+          for (const p of pessoasAtualizadas) {
+            if (descLower.includes(p.nome.toLowerCase())) {
+              idPessoaDestino = p.id;
+              nomePessoaDetectada = p.nome;
+              break;
+            }
+          }
+        }
+
+        // 3. Fallback: se estiver na aba da pessoa (não 'geral'), usa ela; senão usa a primeira pessoa ou geral
+        if (!idPessoaDestino) {
+          idPessoaDestino = abaAtiva !== 'geral' ? abaAtiva : pessoasAtualizadas[0]?.id || 'geral';
+        }
+
+        // 4. Detecção inteligente de tipo (se a descrição tiver 'vale', 'adiantamento', 'pegou' => 'adiantamento')
+        let tipoCalculado: TipoLancamento = (l.tipoSugerido as any) || 'saida';
+        const descTexto = (l.descricao || '').toLowerCase();
+        if (descTexto.includes('vale') || descTexto.includes('adiant') || descTexto.includes('pegou')) {
+          tipoCalculado = 'adiantamento';
+        } else if (
+          descTexto.includes('cabo') || descTexto.includes('câmera') || descTexto.includes('camera') ||
+          descTexto.includes('dvr') || descTexto.includes('conector') || descTexto.includes('fonte') ||
+          descTexto.includes('material') || descTexto.includes('ferramenta')
+        ) {
+          tipoCalculado = 'material';
+        } else if (descTexto.includes('entrada') || descTexto.includes('recebido') || descTexto.includes('cliente') || descTexto.includes('sinal') || descTexto.includes('pagamento do cliente')) {
+          tipoCalculado = 'entrada';
         }
 
         return {
@@ -235,11 +270,11 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
           quantidade: l.quantidade || 1,
           valorCentavos: l.valorCentavos || 0,
           valorOriginalTexto: l.valorOriginalTexto,
-          tipoSugerido: l.tipoSugerido || 'saida',
-          categoria: l.categoria || acerto.categorias[0] || 'Geral',
+          tipoSugerido: tipoCalculado,
+          categoria: l.categoria || (tipoCalculado === 'adiantamento' ? 'Adiantamento/Val' : tipoCalculado === 'material' ? 'Material de Construção' : 'Mão de Obra'),
           formaPagamento: (l.formaPagamento as any) || 'Pix',
           pessoaId: idPessoaDestino,
-          pessoaSugeridaNome: l.pessoaSugerida,
+          pessoaSugeridaNome: nomePessoaDetectada || l.pessoaSugerida,
           confianca: l.confianca || 'alta',
           loja: l.loja || ocr.estabelecimentoOuLoja,
           dividaDeQuem: l.dividaDeQuem || 'eu_devo',

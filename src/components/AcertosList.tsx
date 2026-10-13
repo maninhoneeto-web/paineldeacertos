@@ -3,7 +3,7 @@ import {
   Plus, Search, Filter, FolderPlus, Copy, Archive, Trash2, Calendar, 
   Users, ChevronRight, CheckCircle2, Lock, Clock, Database, Sparkles, FileText, Camera
 } from 'lucide-react';
-import { Acerto, StatusAcerto, PessoaTab, LinhaConferenciaOCR } from '../types';
+import { Acerto, StatusAcerto, PessoaTab, LinhaConferenciaOCR, TipoLancamento } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { ConferenceModal } from './ConferenceModal';
 import { comprimirImagem } from '../utils/imageCompressor';
@@ -208,13 +208,16 @@ export const AcertosList: React.FC<AcertosListProps> = ({
         });
       }
 
-      // Organiza as linhas
+      // Organiza as linhas com detecção inteligente de pessoas, despesas e adiantamentos
       const linhasConferencia: LinhaConferenciaOCR[] = (ocr.linhas || []).map((l: any, idx: number) => {
-        let idPessoaDestino = pessoasCriadas[0]?.id || 'geral';
-        if (l.pessoaSugerida) {
+        let idPessoaDestino = '';
+        let nomePessoaDetectada = l.pessoaSugerida ? l.pessoaSugerida.trim() : '';
+
+        // 1. Tenta identificar se o nome da pessoa está em l.pessoaSugerida
+        if (nomePessoaDetectada) {
           const match = pessoasCriadas.find((p) =>
-            p.nome.toLowerCase().includes(l.pessoaSugerida!.toLowerCase()) ||
-            l.pessoaSugerida!.toLowerCase().includes(p.nome.toLowerCase())
+            p.nome.toLowerCase().includes(nomePessoaDetectada.toLowerCase()) ||
+            nomePessoaDetectada.toLowerCase().includes(p.nome.toLowerCase())
           );
           if (match) {
             idPessoaDestino = match.id;
@@ -222,13 +225,44 @@ export const AcertosList: React.FC<AcertosListProps> = ({
             const novoId = 'p_foto_' + Date.now() + '_' + (pessoasCriadas.length + idx);
             const novaPessoa: PessoaTab = {
               id: novoId,
-              nome: l.pessoaSugerida.trim(),
+              nome: nomePessoaDetectada,
               cor: cores[pessoasCriadas.length % cores.length],
               ordem: pessoasCriadas.length,
             };
             pessoasCriadas.push(novaPessoa);
             idPessoaDestino = novoId;
           }
+        }
+
+        // 2. Se ainda não achou, procura no texto da descrição se cita alguma pessoa conhecida
+        if (!idPessoaDestino && l.descricao) {
+          const descLower = l.descricao.toLowerCase();
+          for (const p of pessoasCriadas) {
+            if (descLower.includes(p.nome.toLowerCase())) {
+              idPessoaDestino = p.id;
+              nomePessoaDetectada = p.nome;
+              break;
+            }
+          }
+        }
+
+        if (!idPessoaDestino) {
+          idPessoaDestino = pessoasCriadas[0]?.id || 'geral';
+        }
+
+        // 3. Detecção inteligente de tipo (adiantamento, material, saida, entrada)
+        let tipoCalculado: TipoLancamento = (l.tipoSugerido as any) || 'saida';
+        const descTexto = (l.descricao || '').toLowerCase();
+        if (descTexto.includes('vale') || descTexto.includes('adiant') || descTexto.includes('pegou')) {
+          tipoCalculado = 'adiantamento';
+        } else if (
+          descTexto.includes('cabo') || descTexto.includes('câmera') || descTexto.includes('camera') ||
+          descTexto.includes('dvr') || descTexto.includes('conector') || descTexto.includes('fonte') ||
+          descTexto.includes('material') || descTexto.includes('ferramenta')
+        ) {
+          tipoCalculado = 'material';
+        } else if (descTexto.includes('entrada') || descTexto.includes('recebido') || descTexto.includes('cliente') || descTexto.includes('sinal') || descTexto.includes('pagamento do cliente')) {
+          tipoCalculado = 'entrada';
         }
 
         return {
@@ -238,11 +272,11 @@ export const AcertosList: React.FC<AcertosListProps> = ({
           quantidade: l.quantidade || 1,
           valorCentavos: l.valorCentavos || 0,
           valorOriginalTexto: l.valorOriginalTexto,
-          tipoSugerido: (l.tipoSugerido as any) || 'saida',
-          categoria: l.categoria || 'Geral',
+          tipoSugerido: tipoCalculado,
+          categoria: l.categoria || (tipoCalculado === 'adiantamento' ? 'Adiantamento/Val' : tipoCalculado === 'material' ? 'Material de Construção' : 'Mão de Obra'),
           formaPagamento: (l.formaPagamento as any) || 'Pix',
           pessoaId: idPessoaDestino,
-          pessoaSugeridaNome: l.pessoaSugerida,
+          pessoaSugeridaNome: nomePessoaDetectada || l.pessoaSugerida,
           confianca: (l.confianca as any) || 'alta',
           loja: l.loja || ocr.estabelecimentoOuLoja,
           dividaDeQuem: (l.dividaDeQuem as any) || 'eu_devo',

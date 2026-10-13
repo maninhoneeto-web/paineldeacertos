@@ -1,6 +1,8 @@
+import React, { useState, useMemo } from 'react';
 import { 
   TrendingUp, TrendingDown, Users, AlertCircle, ArrowUpRight, ArrowDownRight, 
-  CheckCircle2, ChevronRight, DollarSign, PieChart, ShieldAlert, Camera, Sparkles
+  CheckCircle2, ChevronRight, DollarSign, PieChart, ShieldAlert, Camera, Sparkles,
+  Table as TableIcon, Search, Filter, Calendar, Tag, User, Layers
 } from 'lucide-react';
 import { Acerto, Lancamento, PessoaTab } from '../types';
 import { formatarCentavos, calcularTotaisGerais, calcularTotaisPessoa } from '../utils/currency';
@@ -24,6 +26,10 @@ export const TabGeral: React.FC<TabGeralProps> = ({
 }) => {
   const totaisGerais = calcularTotaisGerais(acerto.pessoas, lancamentos);
 
+  const [buscaTabela, setBuscaTabela] = useState('');
+  const [filtroPessoaTabela, setFiltroPessoaTabela] = useState('todas');
+  const [filtroTipoTabela, setFiltroTipoTabela] = useState('todos');
+
   // Dados para o gráfico de barras comparativo (Entradas vs Saídas vs Adiantamentos vs Materiais)
   const maxGrafico = Math.max(
     totaisGerais.totalEntradasCentavos,
@@ -34,6 +40,19 @@ export const TabGeral: React.FC<TabGeralProps> = ({
   );
 
   const getPercent = (centavos: number) => Math.min(100, Math.round((centavos / maxGrafico) * 100));
+
+  // Lançamentos filtrados para a tabela geral
+  const lancamentosFiltrados = useMemo(() => {
+    return lancamentos.filter((l) => {
+      const batePessoa = filtroPessoaTabela === 'todas' || l.pessoaId === filtroPessoaTabela;
+      const bateTipo = filtroTipoTabela === 'todos' || l.tipo === filtroTipoTabela;
+      const bateBusca = !buscaTabela || 
+        (l.descricao || '').toLowerCase().includes(buscaTabela.toLowerCase()) ||
+        (l.categoria || '').toLowerCase().includes(buscaTabela.toLowerCase()) ||
+        (l.loja || '').toLowerCase().includes(buscaTabela.toLowerCase());
+      return batePessoa && bateTipo && bateBusca;
+    });
+  }, [lancamentos, filtroPessoaTabela, filtroTipoTabela, buscaTabela]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -159,97 +178,18 @@ export const TabGeral: React.FC<TabGeralProps> = ({
 
       </div>
 
-      {/* GRÁFICO COMPARATIVO SIMPLES E RESPONSIVO */}
-      <div className="rounded-2xl p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-          <span>Comparativo Visual de Entradas x Saídas</span>
-        </h3>
-
-        <div className="space-y-4">
-          {/* Barra Entradas */}
+      {/* ======================================================== */}
+      {/* TABELA CONTÁBIL DE FECHAMENTO & CÁLCULOS POR PESSOA      */}
+      {/* ======================================================== */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+        <div className="px-5 py-4 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between flex-wrap gap-2">
           <div>
-            <div className="flex justify-between text-xs font-semibold mb-1">
-              <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" /> Entradas Recebidas
-              </span>
-              <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                {formatarCentavos(totaisGerais.totalEntradasCentavos)}
-              </span>
-            </div>
-            <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                style={{ width: `${getPercent(totaisGerais.totalEntradasCentavos)}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Barra Saídas */}
-          <div>
-            <div className="flex justify-between text-xs font-semibold mb-1">
-              <span className="text-rose-700 dark:text-rose-400 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-rose-500" /> Saídas e Despesas
-              </span>
-              <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                {formatarCentavos(totaisGerais.totalSaidasCentavos)}
-              </span>
-            </div>
-            <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-rose-500 transition-all duration-500"
-                style={{ width: `${getPercent(totaisGerais.totalSaidasCentavos)}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Barra Adiantamentos */}
-          <div>
-            <div className="flex justify-between text-xs font-semibold mb-1">
-              <span className="text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-500" /> Adiantamentos Realizados
-              </span>
-              <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                {formatarCentavos(totaisGerais.totalAdiantamentosCentavos)}
-              </span>
-            </div>
-            <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-amber-500 transition-all duration-500"
-                style={{ width: `${getPercent(totaisGerais.totalAdiantamentosCentavos)}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Barra Materiais */}
-          <div>
-            <div className="flex justify-between text-xs font-semibold mb-1">
-              <span className="text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-blue-500" /> Materiais de Construção
-              </span>
-              <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                {formatarCentavos(totaisGerais.totalMateriaisCentavos)}
-              </span>
-            </div>
-            <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-blue-500 transition-all duration-500"
-                style={{ width: `${getPercent(totaisGerais.totalMateriaisCentavos)}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* LISTA DE TODAS AS PESSOAS COM SITUAÇÃO E BOTÃO PARA ABRIR A ABA DELA */}
-      <div className="rounded-2xl p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-              Saldos Individuais por Pessoa
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <TableIcon className="w-4 h-4 text-emerald-600" />
+              <span>Tabela de Fechamento Contábil por Pessoa</span>
             </h3>
             <p className="text-xs text-slate-500">
-              Clique em qualquer pessoa para abrir a aba dela com detalhes e sub-abas
+              Cálculo detalhado de entradas, despesas comprovadas, vales/adiantamentos e saldo líquido individual.
             </p>
           </div>
           <button
@@ -260,64 +200,228 @@ export const TabGeral: React.FC<TabGeralProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {acerto.pessoas.map((pessoa) => {
-            const totais = calcularTotaisPessoa(pessoa, lancamentos);
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 uppercase font-bold border-b border-slate-200 dark:border-slate-700 text-[11px]">
+              <tr>
+                <th className="py-2.5 px-4">Pessoa / Participante</th>
+                <th className="py-2.5 px-3 text-right">Despesas Pagas</th>
+                <th className="py-2.5 px-3 text-right">Materiais Comprados</th>
+                <th className="py-2.5 px-3 text-right">Total Gastos</th>
+                <th className="py-2.5 px-3 text-right">Vales Recebidos</th>
+                <th className="py-2.5 px-3 text-right">Saldo Líquido</th>
+                <th className="py-2.5 px-4 text-center">Situação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {acerto.pessoas.map((p) => {
+                const totais = calcularTotaisPessoa(p, lancamentos);
+                const totalGastos = totais.totalSaidasCentavos + totais.totalMateriaisCentavos;
 
-            return (
-              <div
-                key={pessoa.id}
-                onClick={() => onSelecionarPessoa(pessoa.id)}
-                className="group flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 bg-slate-50/50 dark:bg-slate-800/30 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20 transition cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm shrink-0 shadow-xs"
-                    style={{ backgroundColor: pessoa.cor || '#059669' }}
+                return (
+                  <tr
+                    key={p.id}
+                    onClick={() => onSelecionarPessoa(p.id)}
+                    className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition cursor-pointer"
                   >
-                    {pessoa.nome.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">
-                        {pessoa.nome}
-                      </span>
-                      {pessoa.papel && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium">
-                          {pessoa.papel}
-                        </span>
-                      )}
-                    </div>
-                    <p className={`text-xs font-semibold mt-0.5 ${
-                      totais.statusRelacao === 'pessoa_deve'
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : totais.statusRelacao === 'usuario_deve'
-                        ? 'text-rose-600 dark:text-rose-400'
-                        : 'text-slate-500'
-                    }`}>
-                      {totais.fraseDestaque}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 text-right">
-                  <div>
-                    <span className="text-[10px] block font-bold text-slate-400 uppercase">Saldo</span>
-                    <span className={`font-mono font-bold text-sm ${
+                    <td className="py-3 px-4 flex items-center gap-2.5">
+                      <span
+                        className="w-3.5 h-3.5 rounded-full shrink-0"
+                        style={{ backgroundColor: p.cor || '#059669' }}
+                      />
+                      <div>
+                        <span className="font-bold text-slate-900 dark:text-white block">{p.nome}</span>
+                        {p.papel && <span className="text-[10px] text-slate-400">{p.papel}</span>}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-700 dark:text-slate-300">
+                      {formatarCentavos(totais.totalSaidasCentavos)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-blue-600 dark:text-blue-400">
+                      {formatarCentavos(totais.totalMateriaisCentavos)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
+                      {formatarCentavos(totalGastos)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-amber-600 dark:text-amber-400">
+                      {formatarCentavos(totais.totalAdiantamentosCentavos)}
+                    </td>
+                    <td className={`py-3 px-3 text-right font-mono font-black ${
                       totais.saldoCentavos > 0
-                        ? 'text-emerald-600'
+                        ? 'text-rose-600 dark:text-rose-400'
                         : totais.saldoCentavos < 0
-                        ? 'text-rose-600'
+                        ? 'text-emerald-600 dark:text-emerald-400'
                         : 'text-slate-500'
                     }`}>
-                      {formatarCentavos(totais.saldoCentavos)}
-                    </span>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 transition" />
-                </div>
-              </div>
-            );
-          })}
+                      {totais.saldoCentavos > 0
+                        ? `+ ${formatarCentavos(totais.saldoCentavos)}`
+                        : totais.saldoCentavos < 0
+                        ? `- ${formatarCentavos(Math.abs(totais.saldoCentavos))}`
+                        : 'R$ 0,00'}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        totais.statusRelacao === 'pessoa_deve'
+                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                          : totais.statusRelacao === 'usuario_deve'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                      }`}>
+                        {totais.statusRelacao === 'pessoa_deve'
+                          ? 'Te deve'
+                          : totais.statusRelacao === 'usuario_deve'
+                          ? 'A receber'
+                          : 'Quitado'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-slate-100 dark:bg-slate-800 font-bold border-t-2 border-slate-300 dark:border-slate-700 text-xs">
+              <tr>
+                <td className="py-3 px-4 uppercase text-slate-800 dark:text-white">TOTAL CONSOLIDADO</td>
+                <td className="py-3 px-3 text-right font-mono">{formatarCentavos(totaisGerais.totalSaidasCentavos)}</td>
+                <td className="py-3 px-3 text-right font-mono text-blue-600 dark:text-blue-400">{formatarCentavos(totaisGerais.totalMateriaisCentavos)}</td>
+                <td className="py-3 px-3 text-right font-mono text-rose-600 dark:text-rose-400">
+                  {formatarCentavos(totaisGerais.totalSaidasCentavos + totaisGerais.totalMateriaisCentavos)}
+                </td>
+                <td className="py-3 px-3 text-right font-mono text-amber-600 dark:text-amber-400">
+                  {formatarCentavos(totaisGerais.totalAdiantamentosCentavos)}
+                </td>
+                <td className={`py-3 px-3 text-right font-mono font-black ${totaisGerais.saldoFinalCentavos >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {formatarCentavos(totaisGerais.saldoFinalCentavos)}
+                </td>
+                <td className="py-3 px-4 text-center text-[11px] text-slate-500">Saldo Geral</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* TABELA COMPLETA DE LANÇAMENTOS DO ACERTO                 */}
+      {/* ======================================================== */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+        <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <TableIcon className="w-4 h-4 text-emerald-600" />
+              <span>Tabela Completa de Todos os Lançamentos ({lancamentosFiltrados.length})</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Planilha consolidada de todos os itens cadastrados via foto ou manual.
+            </p>
+          </div>
+
+          {/* Filtros da tabela */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={buscaTabela}
+                onChange={(e) => setBuscaTabela(e.target.value)}
+                placeholder="Buscar item..."
+                className="pl-8 pr-2.5 py-1 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white w-36 sm:w-44 focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+
+            <select
+              value={filtroPessoaTabela}
+              onChange={(e) => setFiltroPessoaTabela(e.target.value)}
+              className="px-2 py-1 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+            >
+              <option value="todas">Todas as Pessoas</option>
+              {acerto.pessoas.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
+
+            <select
+              value={filtroTipoTabela}
+              onChange={(e) => setFiltroTipoTabela(e.target.value)}
+              className="px-2 py-1 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+            >
+              <option value="todos">Todos os Tipos</option>
+              <option value="saida">🔴 Despesas</option>
+              <option value="adiantamento">🟡 Vales</option>
+              <option value="material">🔵 Materiais</option>
+              <option value="entrada">🟢 Entradas</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto max-h-[460px]">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 uppercase font-bold border-b border-slate-200 dark:border-slate-700 text-[11px] shadow-2xs">
+              <tr>
+                <th className="py-2.5 px-3 w-24">Data</th>
+                <th className="py-2.5 px-3">Item / Descrição</th>
+                <th className="py-2.5 px-3 w-32">Pessoa / Aba</th>
+                <th className="py-2.5 px-3 w-28">Tipo</th>
+                <th className="py-2.5 px-3 w-28">Categoria</th>
+                <th className="py-2.5 px-3 text-right w-28">Valor</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {lancamentosFiltrados.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-400 text-xs">
+                    Nenhum lançamento encontrado para os filtros selecionados.
+                  </td>
+                </tr>
+              ) : (
+                lancamentosFiltrados.map((l) => {
+                  const pessoa = acerto.pessoas.find((p) => p.id === l.pessoaId);
+                  const isAdiantamento = l.tipo === 'adiantamento';
+                  const isMaterial = l.tipo === 'material';
+                  const isEntrada = l.tipo === 'entrada';
+
+                  return (
+                    <tr key={l.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                      <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
+                        {l.data ? new Date(l.data + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
+                        {l.descricao}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: pessoa?.cor || '#059669' }}
+                          />
+                          <span>{pessoa?.nome || 'Geral'}</span>
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                          isAdiantamento
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+                            : isMaterial
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200'
+                            : isEntrada
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                            : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200'
+                        }`}>
+                          {isAdiantamento ? '🟡 VALE' : isMaterial ? '🔵 MATERIAL' : isEntrada ? '🟢 ENTRADA' : '🔴 DESPESA'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-500">
+                        {l.categoria || 'Geral'}
+                      </td>
+                      <td className={`py-2.5 px-3 text-right font-mono font-bold ${
+                        isEntrada ? 'text-emerald-600' : 'text-slate-900 dark:text-white'
+                      }`}>
+                        {formatarCentavos(l.valorCentavos)}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

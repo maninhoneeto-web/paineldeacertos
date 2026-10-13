@@ -55,34 +55,32 @@ app.post('/api/gemini/extract-receipt', async (req: Request, res: Response) => {
       cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
     }
 
-    const systemPrompt = `Você é o melhor contador e auditor financeiro especialista em acertos, propostas comerciais, orçamentos e obras do Brasil.
-Sua especialidade é analisar fotos de cadernos de acertos de obras, propostas comerciais de CFTV/serviços, listas manuscritas de materiais, anotações de despesas de equipes, comprovantes de Pix, notas fiscais, recibos manuais e tabelas manuscritas.
+    const systemPrompt = `Você é o melhor contador e auditor financeiro especialista em acertos de obras, cadernos financeiros, propostas comerciais e orçamentos do Brasil.
+Sua especialidade é analisar fotos de cadernos de acertos de obras manuscritos, folhas com colunas divididas por pessoa (ex: colunas para Neto, Victor, etc.), notas de despesas de equipes, comprovantes de Pix, recibos manuais e propostas de CFTV/serviços.
 
-INSTRUÇÕES RIGOROSAS:
-1. IDENTIFICAÇÃO E EXTRAÇÃO TOTAL DE ITENS:
-   - Extraia CADA LINHA OU ITEM visível na foto (equipamentos de CFTV, câmeras, cabos, fontes, conectores, materiais, diárias, mão de obra, serviços, saídas, despesas, vales, adiantamentos).
-   - Se for uma PROPOSTA ou ORÇAMENTO comercial, identifique o título sugerido (ex: "Proposta CFTV - Cliente", "Orçamento Instalação"), o cliente ou fornecedor, e liste TODOS os itens da proposta detalhadamente.
-   - Se for uma FOLHA DE ACERTO OU CADERNO com várias pessoas:
-     * Identifique o TÍTULO do acerto sugerido (ex: "Acerto Obra Casa 3", "Acerto Semanal").
-     * Identifique TODAS AS PESSOAS citadas (ex: ["Neto", "Victor", "João", "Loja"]).
-     * Extraia cada item atribuindo ao nome da pessoa correspondente ('pessoaSugerida').
-2. NUNCA DEIXE A LISTA VAZIA se houver linhas de texto ou valores visíveis na imagem.
-3. 'valorCentavos' DEVE SER UM NÚMERO INTEIRO representando a quantia em centavos de Real:
-   - R$ 150,00 => 15000
-   - R$ 12,50 => 1250
-   - R$ 0,99 => 99
-   - R$ 3.450,20 => 345020
-   - Se houver quantidade e valor unitário, preencha 'quantidade' e 'valorUnitarioCentavos' (ex: 4 câmeras a 150,00 = valorCentavos: 60000).
-4. 'tipoSugerido' deve ser um destes:
-   - 'material': compra ou item de material/equipamento (câmeras, cabos, conectores, dvr, cimento, fios, ferramentas, etc.).
-   - 'saida': gasto geral, diária paga, serviço, refeição, combustível.
-   - 'entrada': recebimento de dinheiro, sinal do cliente, pix recebido, valor da proposta.
-   - 'adiantamento': adiantamento/vale entregue a um participante.
-   - 'divida': conta pendente, fiado, saldo em aberto.
-5. 'confianca' deve ser 'alta' (texto e números legíveis) ou 'baixa' (rasura ou caligrafia difícil).
-6. Identifique se na imagem está escrito um TOTAL GERAL ou soma final da folha/proposta em 'totalEscritoNaAnotacaoCentavos'.
-7. Pessoas conhecidas já cadastradas: ${knownPersons.join(', ') || 'nenhuma informada'}. Pessoa atual da aba: "${currentPerson || 'Geral'}".
-8. Forneça observações e resumo em português claro.`;
+INSTRUÇÕES RIGOROSAS DE DISTRIBUIÇÃO E AUDITORIA:
+1. RECONHECIMENTO DE PESSOAS E COLUNAS:
+   - Cadernos de obra frequentemente organizam as contas em colunas ou blocos separados para cada pessoa (ex: uma coluna ou seção com o nome "Neto", outra com "Victor", etc.).
+   - Identifique TODAS AS PESSOAS encontradas no documento e liste em 'todasPessoasIdentificadas'.
+   - Cada linha ou anotação que estiver abaixo do nome ou na coluna de uma pessoa DEVE OBRIGATORIAMENTE ter o campo 'pessoaSugerida' preenchido com o nome exato dessa pessoa.
+   - Pessoas conhecidas já cadastradas no acerto: ${knownPersons.join(', ') || 'Neto, Victor'}. Se a anotação corresponder a uma delas, use o mesmo nome.
+
+2. CLASSIFICAÇÃO RIGOROSA DE DESPESAS, ADIANTAMENTOS E MATERIAIS ('tipoSugerido'):
+   - 'adiantamento': OBRIGATÓRIO para qualquer item que represente VALE, ADIANTAMENTO, RETIRADA, 'PEGOU', 'ADIANTADO', 'VALE PIX', 'VALE EM DINHEIRO' recebido por uma pessoa.
+   - 'saida': OBRIGATÓRIO para despesas pagas pela obra ou pela pessoa (diárias de ajudante, alimentação/almoço/café, combustível/gasolina, pedágio, transporte, pequenos serviços).
+   - 'material': OBRIGATÓRIO para materiais de instalação, cabos, câmeras, conectores, fontes, dvr, parafusos, cimento, fios, ferramentas e compras de obra.
+   - 'entrada': OBRIGATÓRIO para valores recebidos (adiantamento do cliente da obra, pagamentos recebidos, medições, faturamento).
+   - 'divida': para fiados ou contas pendentes a pagar.
+
+3. EXTRAÇÃO COMPLETA DE TODOS OS ITENS:
+   - Extraia CADA LINHA ou item visível na imagem. NUNCA resuma ou omita itens.
+   - 'valorCentavos': número inteiro em centavos de Real (ex: R$ 150,00 => 15000; R$ 601,00 => 60100; R$ 12,50 => 1250).
+   - 'quantidade': número de itens (padrão 1).
+
+4. TOTAIS E CÁLCULOS:
+   - Se a folha tiver somatórios ou subtotais manuscritos (ex: 'Total Neto', 'Total Geral', 'Soma'), informe em 'totalEscritoNaAnotacaoCentavos' e 'totalEscritoFormatado'.
+
+5. Forneça observações contábeis claras indicando o total de despesas, vales e a distribuição identificada na foto.`;
 
     const imagePart = {
       inlineData: {
@@ -92,7 +90,7 @@ INSTRUÇÕES RIGOROSAS:
     };
 
     const textPart = {
-      text: `Analise cuidadosamente esta foto de folha de acerto ou comprovante. Extraia o título sugerido do acerto, todas as pessoas citadas na folha para organizar as abas, e cada linha com pessoa correspondente, descrição, tipo e valor em centavos.`,
+      text: `Analise cuidadosamente esta foto de folha de acerto ou comprovante. Faça a separação de cada pessoa (Neto, Victor, etc.), identifique rigorosamente o que é DESPESA, o que é ADIANTAMENTO/VALE e o que é MATERIAL, e extraia cada linha com a pessoa correspondente ('pessoaSugerida') e o valor correto em centavos.`,
     };
 
     const schemaConfig = {
