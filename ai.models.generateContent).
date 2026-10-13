@@ -200,7 +200,7 @@ Se a foto tiver 5, 10, 20 ou 50 itens/anotações na folha, EXTRAIA CADA UMA DEL
 
     let response: any;
     try {
-      console.log(`Iniciando extração com Gemini (com Schema e System Prompt otimizado)`);
+      console.log(`Iniciando extração com Gemini (com Schema e System Prompt)`);
       response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: [
