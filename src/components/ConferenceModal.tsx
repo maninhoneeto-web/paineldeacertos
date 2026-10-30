@@ -635,9 +635,9 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
           </div>
         </div>
 
-        {/* ALERTA SE HOUVER DUPLICIDADE OU DIVERGÊNCIA */}
-        {(isDuplicada || temDivergenciaTotal) && (
-          <div className="flex flex-col gap-1 px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/60 text-xs">
+        {/* ALERTA SE HOUVER DUPLICIDADE, DIVERGÊNCIA OU FALHA NA IA */}
+        {(isDuplicada || temDivergenciaTotal || observacoes.includes('⚠️ Atenção')) && (
+          <div className="flex flex-col gap-1.5 px-4 sm:px-6 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/60 text-xs">
             {isDuplicada && (
               <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 font-medium">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -650,6 +650,17 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
                 <span>
                   <strong>Divergência de Total:</strong> Na foto está escrito <strong>{formatarCentavos(totalEscritoCentavos)}</strong> e a soma dos itens lidos é <strong>{formatarCentavos(somaLidaCentavos)}</strong>.
                 </span>
+              </div>
+            )}
+            {observacoes.includes('⚠️ Atenção') && (
+              <div className="flex items-start gap-2.5 text-red-900 dark:text-red-200 font-medium bg-red-50 dark:bg-red-950/60 p-2.5 rounded-xl border border-red-200 dark:border-red-800/80">
+                <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">{observacoes}</p>
+                  <p className="text-[11px] mt-1 text-red-700 dark:text-red-300">
+                    💡 <strong>Como resolver na Vercel:</strong> Abra o painel da Vercel, acesse <strong>Project Settings &gt; Environment Variables</strong>, cadastre a chave <strong>GEMINI_API_KEY</strong> e faça um novo deploy ou redeploy.
+                  </p>
+                </div>
               </div>
             )}
           </div>

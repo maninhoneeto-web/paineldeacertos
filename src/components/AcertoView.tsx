@@ -167,6 +167,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
         });
       } catch (ocrErr: any) {
         console.warn('Leitura da IA indisponível ou falhou, mantendo a foto para conferência manual:', ocrErr);
+        const errMsg = ocrErr?.message || 'Falha na comunicação com o servidor da IA';
         ocr = {
           tipoDocumento: 'Comprovante / Recibo',
           estabelecimentoOuLoja: '',
@@ -186,7 +187,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
               confianca: 'alta',
             },
           ],
-          observacoes: 'Foto anexada com sucesso. Verifique ou digite os dados ao lado com auxílio do botão Aumentar Imagem.',
+          observacoes: `⚠️ Atenção: A leitura automática por IA não pôde processar a foto (${errMsg}). Verifique se a GEMINI_API_KEY está adicionada nas variáveis de ambiente da Vercel.`,
         };
       }
 

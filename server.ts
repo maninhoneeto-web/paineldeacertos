@@ -201,10 +201,9 @@ Se a foto tiver 5, 10, 20 ou 50 itens/anotações na folha, EXTRAIA CADA UMA DEL
     let response: any;
     let lastError: any;
     const candidateModels = [
-      'gemini-2.5-flash',
       'gemini-3.1-flash-lite',
-      'gemini-3.8-flash',
       'gemini-flash-latest',
+      'gemini-3.8-flash',
     ];
 
     for (const modelName of candidateModels) {

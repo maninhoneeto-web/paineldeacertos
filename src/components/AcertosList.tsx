@@ -162,6 +162,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
         });
       } catch (ocrErr: any) {
         console.warn('Leitura automática da IA indisponível ou falhou, mantendo a foto para conferência:', ocrErr);
+        const errMsg = ocrErr?.message || 'Falha na comunicação com o servidor da IA';
         ocr = {
           tipoDocumento: 'Folha de Acerto / Comprovante',
           tituloSugeridoAcerto: 'Acerto ' + new Date().toLocaleDateString('pt-BR'),
@@ -182,7 +183,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
               confianca: 'alta',
             },
           ],
-          observacoes: 'Foto carregada com sucesso. Organize os lançamentos abaixo com o auxílio do zoom.',
+          observacoes: `⚠️ Atenção: A leitura automática por IA não pôde processar a foto (${errMsg}). Verifique se a GEMINI_API_KEY está adicionada nas variáveis de ambiente da Vercel.`,
         };
       }
 
