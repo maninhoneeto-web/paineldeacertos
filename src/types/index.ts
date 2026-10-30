@@ -33,7 +33,10 @@ export interface ParticipanteLucro {
   descontarAdiantamentos?: boolean; // Se deve abater adiantamentos já pegos
 }
 
+export type ModoFechamento = 'quem_deve_a_quem' | 'divisao_lucros' | 'prestacao_contas';
+
 export interface ConfigDivisaoLucros {
+  modoFechamento?: ModoFechamento; // Modo padrão: quem_deve_a_quem
   usarPrecoFixo?: boolean; // Se true, usa o faturamento/taxa configurados; se false, calcula 100% dinâmico das entradas reais
   faturamentoProjetoCentavos?: number; // Valor customizado pelo usuário
   taxaProjetoCentavos?: number; // Taxa de dedução informada pelo usuário
@@ -89,6 +92,9 @@ export interface Lancamento {
   // Vinculação com imagem
   imagemId?: string;
   confianca?: NivelConfianca;
+
+  // Observações adicionais do item
+  observacoes?: string;
 
   createdAt: string;
   updatedAt: string;

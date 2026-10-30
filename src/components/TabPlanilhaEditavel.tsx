@@ -1,11 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Table as TableIcon, Plus, Trash2, Copy, ArrowRightLeft, Search, Filter, 
-  Download, FileText, CheckCircle2, AlertCircle, Camera, DollarSign, Calendar,
-  TrendingUp, TrendingDown, Clock, Package, User, Layers, ArrowUpDown
+  Table as TableIcon, Plus, Trash2, Copy, Search, 
+  Download, FileText, Check, CheckCircle2, Camera, User
 } from 'lucide-react';
-import { Acerto, Lancamento, PessoaTab, TipoLancamento, FormaPagamento } from '../types';
-import { formatarCentavos, parseValorParaCentavos, formatarCentavosSemSimbolo, calcularTotaisGerais, calcularTotaisPessoa } from '../utils/currency';
+import { Acerto, Lancamento, TipoLancamento } from '../types';
+import { 
+  formatarCentavos, 
+  parseValorParaCentavos, 
+  formatarCentavosSemSimbolo, 
+  calcularTotaisPessoa,
+  calcularResolucaoAcerto 
+} from '../utils/currency';
 
 interface TabPlanilhaEditavelProps {
   acerto: Acerto;
@@ -17,6 +22,7 @@ interface TabPlanilhaEditavelProps {
   onNovoLancamento: (tipoPre?: TipoLancamento) => void;
   onUploadImagem?: (files: FileList | null) => void;
   onGerarPdf: () => void;
+  onSalvarObservacoesAcerto?: (observacoes: string) => Promise<void>;
   isEnviandoImagem?: boolean;
 }
 
@@ -27,23 +33,31 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
   onExcluirLancamento,
   onDuplicarLancamento,
   onMoverLancamento,
-  onNovoLancamento,
+  onNovoLancamento: _onNovoLancamento,
   onUploadImagem,
   onGerarPdf,
+  onSalvarObservacoesAcerto,
   isEnviandoImagem = false,
 }) => {
   const [busca, setBusca] = useState('');
   const [filtroPessoa, setFiltroPessoa] = useState<string>('todas');
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
   const [ordenacao, setOrdenacao] = useState<'data_desc' | 'data_asc' | 'valor_desc' | 'valor_asc'>('data_desc');
-  const [linhaEmEdicaoId, setLinhaEmEdicaoId] = useState<string | null>(null);
   const [selecionadosIds, setSelecionadosIds] = useState<string[]>([]);
   const [isSalvandoLinha, setIsSalvandoLinha] = useState<string | null>(null);
 
-  // Totais consolidados
-  const totaisGerais = useMemo(() => {
-    return calcularTotaisGerais(acerto.pessoas, lancamentos);
-  }, [acerto.pessoas, lancamentos]);
+  // Observações gerais do acerto
+  const [obsAcerto, setObsAcerto] = useState(acerto.observacoes || '');
+  const [isSalvandoObs, setIsSalvandoObs] = useState(false);
+  const [obsSalvaSucesso, setObsSalvaSucesso] = useState(false);
+
+  // WhatsApp
+  const [copiadoWhats, setCopiadoWhats] = useState(false);
+
+  // Resolução contábil direta: QUEM DEVE A QUEM
+  const resolucao = useMemo(() => {
+    return calcularResolucaoAcerto(acerto, lancamentos);
+  }, [acerto, lancamentos]);
 
   // Resumo por pessoa
   const resumoPessoas = useMemo(() => {
@@ -66,6 +80,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
       const bateBusca = !busca.trim() || 
         (l.descricao || '').toLowerCase().includes(busca.toLowerCase()) ||
         (l.categoria || '').toLowerCase().includes(busca.toLowerCase()) ||
+        (l.observacoes || '').toLowerCase().includes(busca.toLowerCase()) ||
         (l.loja || '').toLowerCase().includes(busca.toLowerCase()) ||
         acerto.pessoas.find(p => p.id === l.pessoaId)?.nome.toLowerCase().includes(busca.toLowerCase());
 
@@ -117,22 +132,56 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
       pessoaId: idPessoaPadrao,
       tipo: tipoPadrao,
       data: new Date().toISOString().slice(0, 10),
-      descricao: 'Novo lançamento na planilha',
+      descricao: '',
       valorCentavos: 0,
-      categoria: tipoPadrao === 'adiantamento' ? 'Adiantamento/Val' : tipoPadrao === 'material' ? 'Material de Construção' : 'Mão de Obra',
+      categoria: 'Geral',
       formaPagamento: 'Pix',
       quantidade: 1,
+      observacoes: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     await onSalvarLancamento(novo);
-    setLinhaEmEdicaoId(novo.id);
+  };
+
+  // Salvar Observações do Acerto
+  const handleSalvarObs = async () => {
+    setIsSalvandoObs(true);
+    try {
+      if (onSalvarObservacoesAcerto) {
+        await onSalvarObservacoesAcerto(obsAcerto);
+      }
+      setObsSalvaSucesso(true);
+      setTimeout(() => setObsSalvaSucesso(false), 3000);
+    } catch (err: any) {
+      alert('Erro ao salvar observações: ' + (err.message || 'Tente novamente.'));
+    } finally {
+      setIsSalvandoObs(false);
+    }
+  };
+
+  // Copiar resumo para WhatsApp
+  const handleCopiarWhatsApp = async () => {
+    try {
+      await navigator.clipboard.writeText(resolucao.textoWhatsApp);
+      setCopiadoWhats(true);
+      setTimeout(() => setCopiadoWhats(false), 3000);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = resolucao.textoWhatsApp;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopiadoWhats(true);
+      setTimeout(() => setCopiadoWhats(false), 3000);
+    }
   };
 
   // Exportar para CSV / Excel
   const handleExportarExcelCSV = () => {
-    const cabecalho = ['ID', 'Data', 'Descrição', 'Pessoa / Aba', 'Tipo', 'Categoria', 'Forma Pagamento', 'Qtd', 'Valor (R$)'];
+    const cabecalho = ['ID', 'Data', 'Descrição', 'Pessoa / Aba', 'Tipo', 'Categoria', 'Forma Pagamento', 'Qtd', 'Valor (R$)', 'Observações'];
     const linhasCSV = lancamentosProcessados.map((l) => {
       const nomePessoa = acerto.pessoas.find((p) => p.id === l.pessoaId)?.nome || 'Geral';
       const valorFormatado = (l.valorCentavos / 100).toFixed(2).replace('.', ',');
@@ -148,6 +197,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
         `"${l.formaPagamento || 'Pix'}"`,
         l.quantidade || 1,
         `"${valorFormatado}"`,
+        `"${(l.observacoes || '').replace(/"/g, '""')}"`,
       ].join(';');
     });
 
@@ -167,7 +217,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
   // Excluir selecionados em lote
   const handleExcluirSelecionados = async () => {
     if (selecionadosIds.length === 0) return;
-    if (!confirm(`Tem certeza que deseja excluir ${selecionadosIds.length} lançamentos selecionados da planilha?`)) {
+    if (!confirm(`Deseja excluir os ${selecionadosIds.length} lançamentos selecionados?`)) {
       return;
     }
     for (const id of selecionadosIds) {
@@ -177,27 +227,133 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-5 animate-fade-in">
       
-      {/* CABEÇALHO DA PLANILHA COM AÇÕES RÁPIDAS */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-              <TableIcon className="w-5 h-5" />
+      {/* 1. CARD PRINCIPAL E DIRETO: QUEM DEVE A QUEM (SEM CONCEITO DE SÓCIO) */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl border border-slate-700">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/80 pb-3">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block">
+              Fechamento do Acerto
             </span>
-            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-              Planilha Completa e Editável do Acerto
-            </h2>
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight mt-0.5">
+              🤝 Quem Deve a Quem
+            </h3>
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            Edite descrições, valores, tipos e pessoas diretamente nas linhas. Reorganize tudo com simplicidade e cálculos em tempo real.
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleCopiarWhatsApp}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition active:scale-95 cursor-pointer shadow-xs ${
+                copiadoWhats
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+              }`}
+              title="Copiar resumo do acerto formatado para o WhatsApp"
+            >
+              {copiadoWhats ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              <span>{copiadoWhats ? 'Copiado para WhatsApp!' : 'Copiar p/ WhatsApp'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onGerarPdf}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs sm:text-sm font-bold border border-slate-600 transition active:scale-95 cursor-pointer shadow-xs"
+              title="Baixar PDF simplificado do acerto"
+            >
+              <FileText className="w-4 h-4 text-emerald-400" />
+              <span>Salvar em PDF</span>
+            </button>
+          </div>
+        </div>
+
+        {resolucao.transacoes.length === 0 ? (
+          <div className="py-4 text-center text-slate-300">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-1" />
+            <p className="text-base font-bold text-white">Todas as contas estão quitadas e equilibradas!</p>
+            <p className="text-xs text-slate-400">Não há valores pendentes entre os participantes.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
+            {resolucao.transacoes.map((t, idx) => (
+              <div
+                key={t.id || idx}
+                className="p-4 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 flex items-center justify-between gap-3 shadow-md"
+              >
+                <div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-bold text-rose-300 uppercase">{t.devedor}</span>
+                    <span className="text-slate-400">➔</span>
+                    <span className="font-bold text-emerald-300 uppercase">{t.credor}</span>
+                  </div>
+                  <p className="text-base sm:text-lg font-black text-white mt-1">
+                    👉 <strong className="text-rose-300 uppercase">{t.devedor}</strong> DEVE PAGAR PARA <strong className="text-emerald-300 uppercase">{t.credor}</strong>
+                  </p>
+                  <p className="text-[11px] text-slate-300 mt-0.5">{t.motivo}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Valor a Acertar</span>
+                  <span className="text-xl sm:text-2xl font-black font-mono text-emerald-400">
+                    {formatarCentavos(t.valorCentavos)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 2. CAMPO DE OBSERVAÇÕES E NOTAS DO ACERTO (EDITÁVEL) */}
+      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-emerald-600" />
+            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+              Observações e Notas do Acerto
+            </h4>
+          </div>
+          {obsSalvaSucesso && (
+            <span className="text-xs font-bold text-emerald-600 flex items-center gap-1 animate-fade-in">
+              <Check className="w-3.5 h-3.5" /> Salvo com sucesso!
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <textarea
+            rows={2}
+            value={obsAcerto}
+            onChange={(e) => setObsAcerto(e.target.value)}
+            placeholder="Ex: vamos fazer o que maninho pegou e o que passou para regina..."
+            className="flex-1 p-2.5 text-xs sm:text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button
+            type="button"
+            onClick={handleSalvarObs}
+            disabled={isSalvandoObs}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition cursor-pointer shrink-0 self-end sm:self-center disabled:opacity-50"
+          >
+            {isSalvandoObs ? 'Salvando...' : 'Salvar Observações'}
+          </button>
+        </div>
+      </div>
+
+      {/* 3. BARRA DE AÇÕES DA PLANILHA (NOVA LINHA, LER FOTO, EXPORTAR) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+        <div>
+          <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <TableIcon className="w-4 h-4 text-emerald-600" />
+            <span>Planilha de Lançamentos ({lancamentos.length})</span>
+          </h3>
+          <p className="text-xs text-slate-500">
+            Edite itens, valores e pessoas diretamente nas linhas.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Adicionar linha na planilha */}
           <button
+            type="button"
             onClick={handleAdicionarLinhaRapida}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-700/20 transition cursor-pointer"
           >
@@ -205,7 +361,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
             <span>+ Nova Linha</span>
           </button>
 
-          {/* Ler foto de caderno */}
+          {/* Ler foto */}
           {onUploadImagem && (
             <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-bold border border-slate-200 dark:border-slate-700 transition cursor-pointer active:scale-95">
               <Camera className="w-4 h-4 text-emerald-600" />
@@ -223,142 +379,20 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
             </label>
           )}
 
-          {/* Exportar Excel / CSV */}
+          {/* Exportar Excel */}
           <button
+            type="button"
             onClick={handleExportarExcelCSV}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs sm:text-sm font-semibold transition active:scale-95 cursor-pointer"
-            title="Baixar planilha compatível com Microsoft Excel e Google Planilhas"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition active:scale-95 cursor-pointer"
+            title="Exportar para Excel / CSV"
           >
             <Download className="w-4 h-4 text-emerald-600" />
-            <span>Exportar Excel (CSV)</span>
-          </button>
-
-          {/* Salvar em PDF */}
-          <button
-            onClick={onGerarPdf}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs sm:text-sm font-bold transition active:scale-95 cursor-pointer"
-          >
-            <FileText className="w-4 h-4 text-emerald-400" />
-            <span>Salvar em PDF</span>
+            <span>Excel (CSV)</span>
           </button>
         </div>
       </div>
 
-      {/* CARDS DE CÁLCULOS TOTAIS DINÂMICOS */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-        {/* Entradas */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200/60 dark:border-emerald-900/40 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold text-emerald-600">Entradas</span>
-            <TrendingUp className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-emerald-600 dark:text-emerald-400">
-            {formatarCentavos(totaisGerais.totalEntradasCentavos)}
-          </div>
-        </div>
-
-        {/* Despesas */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200/60 dark:border-rose-900/40 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold text-rose-600">Despesas</span>
-            <TrendingDown className="w-4 h-4 text-rose-500" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-rose-600 dark:text-rose-400">
-            {formatarCentavos(totaisGerais.totalSaidasCentavos)}
-          </div>
-        </div>
-
-        {/* Vales / Adiantamentos */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-amber-200/60 dark:border-amber-900/40 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold text-amber-600">Vales / Adiantamentos</span>
-            <Clock className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-amber-600 dark:text-amber-400">
-            {formatarCentavos(totaisGerais.totalAdiantamentosCentavos)}
-          </div>
-        </div>
-
-        {/* Materiais */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-blue-200/60 dark:border-blue-900/40 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold text-blue-600">Materiais</span>
-            <Package className="w-4 h-4 text-blue-500" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-blue-600 dark:text-blue-400">
-            {formatarCentavos(totaisGerais.totalMateriaisCentavos)}
-          </div>
-        </div>
-
-        {/* Saldo Líquido */}
-        <div className="col-span-2 sm:col-span-4 lg:col-span-1 p-3.5 rounded-2xl bg-slate-900 text-white border border-slate-800 shadow-md">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span className="font-semibold text-emerald-400">Saldo Líquido</span>
-            <DollarSign className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className={`text-base sm:text-lg font-black ${totaisGerais.saldoFinalCentavos >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {formatarCentavos(totaisGerais.saldoFinalCentavos)}
-          </div>
-        </div>
-      </div>
-
-      {/* RESUMO RÁPIDO POR PESSOA (DISTRIBUIÇÃO) */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-          <User className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Fechamento Contábil por Pessoa</span>
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {resumoPessoas.map(({ pessoa, totais, count }) => (
-            <div
-              key={pessoa.id}
-              onClick={() => setFiltroPessoa(filtroPessoa === pessoa.id ? 'todas' : pessoa.id)}
-              className={`p-3 rounded-xl border transition cursor-pointer ${
-                filtroPessoa === pessoa.id
-                  ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: pessoa.cor || '#059669' }}
-                  />
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{pessoa.nome}</span>
-                </div>
-                <span className="text-[10px] text-slate-400">{count} itens</span>
-              </div>
-              <div className="space-y-0.5 text-[11px]">
-                <div className="flex justify-between text-slate-500">
-                  <span>Gastos:</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">
-                    {formatarCentavos(totais.totalSaidasCentavos + totais.totalMateriaisCentavos)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-slate-500">
-                  <span>Vales:</span>
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">
-                    {formatarCentavos(totais.totalAdiantamentosCentavos)}
-                  </span>
-                </div>
-                <div className="flex justify-between font-bold pt-1 border-t border-slate-200 dark:border-slate-700/60">
-                  <span>Saldo:</span>
-                  <span className={totais.saldoCentavos >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                    {totais.saldoCentavos > 0
-                      ? `Te deve ${formatarCentavos(totais.saldoCentavos)}`
-                      : totais.saldoCentavos < 0
-                      ? `Recebe ${formatarCentavos(Math.abs(totais.saldoCentavos))}`
-                      : 'Quitado'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* BARRA DE FILTROS E BUSCA */}
+      {/* 4. BARRA DE FILTROS E BUSCA */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -366,13 +400,12 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
             type="text"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por item, descrição, categoria ou pessoa..."
+            placeholder="Buscar por descrição, pessoa ou observação..."
             className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {/* Filtro por pessoa */}
           <select
             value={filtroPessoa}
             onChange={(e) => setFiltroPessoa(e.target.value)}
@@ -384,21 +417,18 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
             ))}
           </select>
 
-          {/* Filtro por tipo */}
           <select
             value={filtroTipo}
             onChange={(e) => setFiltroTipo(e.target.value)}
             className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none"
           >
             <option value="todos">Todos os tipos</option>
-            <option value="saida">Despesas (Saídas)</option>
+            <option value="entrada">Entradas / Repasses</option>
+            <option value="saida">Saídas / Despesas</option>
             <option value="adiantamento">Vales / Adiantamentos</option>
             <option value="material">Materiais</option>
-            <option value="entrada">Entradas / Recebimentos</option>
-            <option value="divida">Dívidas</option>
           </select>
 
-          {/* Ordenação */}
           <select
             value={ordenacao}
             onChange={(e) => setOrdenacao(e.target.value as any)}
@@ -412,8 +442,9 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
 
           {selecionadosIds.length > 0 && (
             <button
+              type="button"
               onClick={handleExcluirSelecionados}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition active:scale-95"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition active:scale-95 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Excluir {selecionadosIds.length}</span>
@@ -422,7 +453,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
         </div>
       </div>
 
-      {/* TABELA PLANILHA COM CÉLULAS DIRETAMENTE EDITÁVEIS */}
+      {/* 5. TABELA DA PLANILHA DIRETAMENTE EDITÁVEL */}
       <div className="overflow-x-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
         <table className="w-full text-left border-collapse text-xs sm:text-sm">
           <thead>
@@ -442,13 +473,13 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
                 />
               </th>
               <th className="py-3 px-2 w-28">Data</th>
-              <th className="py-3 px-3 min-w-[200px]">Item / Descrição</th>
-              <th className="py-3 px-2 w-36">Pessoa / Aba</th>
-              <th className="py-3 px-2 w-36">Tipo</th>
-              <th className="py-3 px-2 w-28">Categoria</th>
-              <th className="py-3 px-2 w-16 text-center">Qtd</th>
-              <th className="py-3 px-3 w-32 text-right">Valor (R$)</th>
-              <th className="py-3 px-2 w-20 text-center">Ações</th>
+              <th className="py-3 px-3 min-w-[180px]">Item / Descrição</th>
+              <th className="py-3 px-2 w-32">Participante</th>
+              <th className="py-3 px-2 w-28">Tipo</th>
+              <th className="py-3 px-2 w-14 text-center">Qtd</th>
+              <th className="py-3 px-3 w-28 text-right">Valor (R$)</th>
+              <th className="py-3 px-3 min-w-[160px]">Observações / Notas</th>
+              <th className="py-3 px-2 w-16 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -456,14 +487,13 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
               <tr>
                 <td colSpan={9} className="py-12 text-center text-slate-400">
                   <TableIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="font-semibold text-sm">Nenhum lançamento encontrado para os filtros selecionados.</p>
+                  <p className="font-semibold text-sm">Nenhum lançamento encontrado.</p>
                   <p className="text-xs text-slate-500 mt-1">Clique em "+ Nova Linha" ou envie uma foto para preencher a planilha.</p>
                 </td>
               </tr>
             ) : (
-              lancamentosProcessados.map((l, index) => {
+              lancamentosProcessados.map((l) => {
                 const isSelected = selecionadosIds.includes(l.id);
-                const isSaving = isSalvandoLinha === l.id;
 
                 return (
                   <tr
@@ -513,7 +543,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
                       />
                     </td>
 
-                    {/* Pessoa (Dropdown direto) */}
+                    {/* Pessoa (Dropdown) */}
                     <td className="py-2 px-2">
                       <select
                         value={l.pessoaId}
@@ -528,7 +558,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
                       </select>
                     </td>
 
-                    {/* Tipo (Dropdown direto com cores) */}
+                    {/* Tipo */}
                     <td className="py-2 px-2">
                       <select
                         value={l.tipo}
@@ -543,27 +573,11 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
                             : 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40'
                         }`}
                       >
-                        <option value="saida">Despesa</option>
+                        <option value="saida">Saída / Pix</option>
+                        <option value="entrada">Entrada / Repasse</option>
                         <option value="adiantamento">Vale / Adiant.</option>
                         <option value="material">Material</option>
-                        <option value="entrada">Entrada</option>
-                        <option value="divida">Dívida</option>
                       </select>
-                    </td>
-
-                    {/* Categoria */}
-                    <td className="py-2 px-2">
-                      <input
-                        type="text"
-                        defaultValue={l.categoria || ''}
-                        onBlur={(e) => {
-                          if (e.target.value !== l.categoria) {
-                            handleAtualizarCampo(l, 'categoria', e.target.value);
-                          }
-                        }}
-                        placeholder="Categoria"
-                        className="w-full px-2 py-1 rounded-lg border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-emerald-500 bg-transparent text-xs text-slate-600 dark:text-slate-400 focus:outline-none"
-                      />
                     </td>
 
                     {/* Quantidade */}
@@ -589,7 +603,22 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
                         defaultValue={formatarCentavosSemSimbolo(l.valorCentavos)}
                         onBlur={(e) => handleAtualizarValor(l, e.target.value)}
                         placeholder="0,00"
-                        className="w-28 text-right py-1 px-2 rounded-lg border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-emerald-500 bg-transparent text-xs font-black text-slate-900 dark:text-white focus:outline-none"
+                        className="w-24 text-right py-1 px-2 rounded-lg border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-emerald-500 bg-transparent text-xs font-black text-slate-900 dark:text-white focus:outline-none"
+                      />
+                    </td>
+
+                    {/* Observações da Linha */}
+                    <td className="py-2 px-3">
+                      <input
+                        type="text"
+                        defaultValue={l.observacoes || ''}
+                        onBlur={(e) => {
+                          if (e.target.value !== (l.observacoes || '')) {
+                            handleAtualizarCampo(l, 'observacoes', e.target.value);
+                          }
+                        }}
+                        placeholder="Nota / obs..."
+                        className="w-full px-2 py-1 rounded-lg border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-emerald-500 bg-transparent text-xs text-slate-600 dark:text-slate-300 focus:outline-none"
                       />
                     </td>
 
@@ -597,6 +626,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
                     <td className="py-2 px-2 text-center">
                       <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100 transition">
                         <button
+                          type="button"
                           onClick={() => onDuplicarLancamento(l)}
                           title="Duplicar linha"
                           className="p-1 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
@@ -604,6 +634,7 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => onExcluirLancamento(l.id)}
                           title="Excluir linha"
                           className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
@@ -620,14 +651,41 @@ export const TabPlanilhaEditavel: React.FC<TabPlanilhaEditavelProps> = ({
         </table>
       </div>
 
-      {/* RODAPÉ DA PLANILHA */}
-      <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60">
-        <div>
-          Mostrando <span className="font-bold text-slate-800 dark:text-slate-200">{lancamentosProcessados.length}</span> de <span className="font-bold text-slate-800 dark:text-slate-200">{lancamentos.length}</span> lançamentos da planilha.
-        </div>
-        <div className="flex items-center gap-2 mt-2 sm:mt-0">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Alterações gravadas automaticamente no banco de dados.</span>
+      {/* 6. RESUMO RÁPIDO DOS PARTICIPANTES */}
+      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+          <User className="w-3.5 h-3.5 text-emerald-500" />
+          <span>Resumo por Participante</span>
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          {resumoPessoas.map(({ pessoa, totais, count }) => (
+            <div
+              key={pessoa.id}
+              onClick={() => setFiltroPessoa(filtroPessoa === pessoa.id ? 'todas' : pessoa.id)}
+              className={`p-3 rounded-xl border transition cursor-pointer ${
+                filtroPessoa === pessoa.id
+                  ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full"
+                    style={{ backgroundColor: pessoa.cor || '#059669' }}
+                  />
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{pessoa.nome}</span>
+                </div>
+                <span className="text-[10px] text-slate-400">{count} lançamentos</span>
+              </div>
+              <div className="text-[11px] text-slate-500 flex justify-between pt-1 border-t border-slate-200 dark:border-slate-700/60">
+                <span>Total Movimentado:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">
+                  {formatarCentavos(totais.totalEntradasCentavos + totais.totalSaidasCentavos)}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

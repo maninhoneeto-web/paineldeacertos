@@ -37,8 +37,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
   onVoltar,
   onAtualizarAcerto,
 }) => {
-  // Aba ativa: 'geral' ou ID da pessoa
-  const [abaAtiva, setAbaAtiva] = useState<string>('geral');
+  // Aba ativa: 'planilha' por padrão para abrir direto a planilha prática
+  const [abaAtiva, setAbaAtiva] = useState<string>('planilha');
   const [subAbaAtiva, setSubAbaAtiva] = useState<string>('resumo');
 
   // Estado dos dados vinculados
@@ -105,7 +105,7 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
           setLancamentos(lancs);
           setImagens(imgs);
           setHistorico(hist);
-          if (ultimaAba && (ultimaAba === 'geral' || acerto.pessoas.some((p) => p.id === ultimaAba))) {
+          if (ultimaAba && (ultimaAba === 'planilha' || ultimaAba === 'quem_deve' || ultimaAba === 'geral' || acerto.pessoas.some((p) => p.id === ultimaAba))) {
             setAbaAtiva(ultimaAba);
           }
         }
@@ -124,6 +124,17 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
     setAbaAtiva(novaAba);
     setSubAbaAtiva('resumo');
     salvarConfig(`aba_${acerto.id}`, novaAba);
+  };
+
+  // Salvar observações do acerto
+  const handleSalvarObservacoesAcerto = async (novasObs: string) => {
+    const atualizado: Acerto = {
+      ...acerto,
+      observacoes: novasObs,
+      updatedAt: new Date().toISOString(),
+    };
+    await salvarAcerto(atualizado);
+    onAtualizarAcerto(atualizado);
   };
 
   // Recarregar dados após modificações
@@ -616,32 +627,18 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
               onClick={async () => {
                 try {
                   const { gerarRelatorioPDF } = await import('../utils/pdfGenerator');
-                  const doc = await gerarRelatorioPDF(acerto, lancamentos, imagens, {
-                    pessoasIds: acerto.pessoas.map((p) => p.id),
-                    secoes: {
-                      resumo: true,
-                      entradas: true,
-                      saidas: true,
-                      adiantamentos: true,
-                      materiais: true,
-                      dividas: true,
-                    },
-                    incluirImagens: true,
-                    incluirAbaGeral: true,
-                    incluirDivisaoLucros: true,
-                  });
+                  const doc = await gerarRelatorioPDF(acerto, lancamentos, imagens);
                   const sanitizado = acerto.titulo.toLowerCase().replace(/[^a-z0-9]/g, '_');
-                  const nomeArquivo = `nds_cftv_digital_${sanitizado}_${new Date().toISOString().slice(0, 10)}.pdf`;
+                  const nomeArquivo = `acerto_${sanitizado}_${new Date().toISOString().slice(0, 10)}.pdf`;
                   doc.save(nomeArquivo);
                 } catch (err: any) {
                   console.error(err);
-                  // Se falhar o download direto, abre o modal
                   setPdfPessoaIdFoco(undefined);
                   setModalPdfAberto(true);
                 }
               }}
               className="flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-700/20 transition cursor-pointer"
-              title="Salvar relatório contábil em PDF da NDS CFTV Digital"
+              title="Salvar relatório contábil em PDF"
             >
               <FileText className="w-4 h-4 text-emerald-100" />
               <span>Salvar em PDF</span>
@@ -685,22 +682,9 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
 
         </div>
 
-        {/* NAVEGAÇÃO DAS ABAS POR PESSOA COM BOTÃO "+ NOVA PESSOA" E "DIVISÃO DE LUCROS" */}
+        {/* NAVEGAÇÃO DAS ABAS (PRÁTICA E DIRETA) */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-1 flex items-center gap-1 overflow-x-auto scrollbar-none">
-          {/* Aba Geral (sempre a primeira) */}
-          <button
-            onClick={() => handleTrocarAba('geral')}
-            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
-              abaAtiva === 'geral'
-                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>GERAL</span>
-          </button>
-
-          {/* Aba PLANILHA EDITÁVEL */}
+          {/* Aba PLANILHA PRÁTICA (Aba Principal Padrão) */}
           <button
             onClick={() => handleTrocarAba('planilha')}
             className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
@@ -710,20 +694,33 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             }`}
           >
             <TableIcon className="w-3.5 h-3.5 text-emerald-500" />
-            <span>PLANILHA</span>
+            <span>PLANILHA DO ACERTO</span>
           </button>
 
-          {/* Aba DIVISÃO DE LUCROS */}
+          {/* Aba QUEM DEVE A QUEM */}
           <button
-            onClick={() => handleTrocarAba('divisao_lucros')}
+            onClick={() => handleTrocarAba('quem_deve')}
             className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
-              abaAtiva === 'divisao_lucros'
+              abaAtiva === 'quem_deve'
                 ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
             }`}
           >
-            <Percent className="w-3.5 h-3.5 text-emerald-500" />
-            <span>DIVISÃO DE LUCROS</span>
+            <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
+            <span>QUEM DEVE A QUEM</span>
+          </button>
+
+          {/* Aba BALANÇO CONSOLIDADO */}
+          <button
+            onClick={() => handleTrocarAba('geral')}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
+              abaAtiva === 'geral'
+                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span>BALANÇO GERAL</span>
           </button>
 
           {/* Abas individuais de cada pessoa */}
@@ -765,18 +762,8 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
         {carregando ? (
           <div className="p-16 text-center text-slate-400">
             <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm font-medium">Carregando acerto e conferências...</p>
+            <p className="text-sm font-medium">Carregando acerto...</p>
           </div>
-        ) : abaAtiva === 'geral' ? (
-          <TabGeral
-            acerto={acerto}
-            lancamentos={lancamentos}
-            onSelecionarPessoa={(id) => handleTrocarAba(id)}
-            onNovaPessoa={() => setModalNovaPessoa(true)}
-            onUploadImagem={handleUploadImagens}
-            onAbrirPlanilha={() => handleTrocarAba('planilha')}
-            isEnviandoImagem={isProcessandoImagem}
-          />
         ) : abaAtiva === 'planilha' ? (
           <TabPlanilhaEditavel
             acerto={acerto}
@@ -795,17 +782,29 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
               setPdfPessoaIdFoco(undefined);
               setModalPdfAberto(true);
             }}
+            onSalvarObservacoesAcerto={handleSalvarObservacoesAcerto}
             isEnviandoImagem={isProcessandoImagem}
           />
-        ) : abaAtiva === 'divisao_lucros' ? (
+        ) : abaAtiva === 'quem_deve' || abaAtiva === 'divisao_lucros' ? (
           <TabDivisaoLucros
             acerto={acerto}
             lancamentos={lancamentos}
             onSalvarConfigLucros={handleSalvarConfigLucros}
+            onSalvarObservacoesAcerto={handleSalvarObservacoesAcerto}
             onExportarPdf={() => {
               setPdfPessoaIdFoco(undefined);
               setModalPdfAberto(true);
             }}
+          />
+        ) : abaAtiva === 'geral' ? (
+          <TabGeral
+            acerto={acerto}
+            lancamentos={lancamentos}
+            onSelecionarPessoa={(id) => handleTrocarAba(id)}
+            onNovaPessoa={() => setModalNovaPessoa(true)}
+            onUploadImagem={handleUploadImagens}
+            onAbrirPlanilha={() => handleTrocarAba('planilha')}
+            isEnviandoImagem={isProcessandoImagem}
           />
         ) : pessoaAtiva ? (
           <TabPessoa

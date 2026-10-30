@@ -411,3 +411,286 @@ export function calcularDivisaoLucros(
   };
 }
 
+export interface TransacaoResolucao {
+  id: string;
+  devedor: string;
+  credor: string;
+  valorCentavos: number;
+  motivo: string;
+}
+
+export interface BalancoPessoaResolucao {
+  pessoaId: string;
+  nome: string;
+  cor?: string;
+  gastosPagosCentavos: number;
+  adiantamentosPegosCentavos: number;
+  saldoDiretoCentavos: number; // adiantamentos - gastos
+  cotaEntradasCentavos: number;
+  saldoFinalAReceberCentavos: number;
+  status: 'recebe' | 'paga' | 'quitado';
+  descricaoStatus: string;
+}
+
+export interface ResolucaoAcertoContas {
+  totalEntradasCentavos: number;
+  totalGastosCentavos: number;
+  sobraOuDeficitCentavos: number;
+  temEntradas: boolean;
+  balancoPorPessoa: BalancoPessoaResolucao[];
+  transacoes: TransacaoResolucao[];
+  textoWhatsApp: string;
+}
+
+/**
+ * Calcula a resolução direta e sem complicação de um acerto de contas:
+ * "Fulano deve pagar R$ X para Ciclano"
+ * Elimina o conceito de "sócio" forçado, tabelas vazias e mostra a conta real.
+ */
+export function calcularResolucaoAcerto(acerto: Acerto, lancamentos: Lancamento[]): ResolucaoAcertoContas {
+  const pessoas = acerto.pessoas || [];
+  const numPessoas = pessoas.length;
+
+  let totalEntradasCentavos = 0;
+  let totalGastosGeraisCentavos = 0;
+
+  lancamentos.forEach((l) => {
+    const v = Math.abs(l.valorCentavos || 0);
+    if (l.tipo === 'entrada') {
+      totalEntradasCentavos += v;
+    } else {
+      totalGastosGeraisCentavos += v;
+    }
+  });
+
+  const sobraOuDeficitCentavos = totalEntradasCentavos - totalGastosGeraisCentavos;
+  const temEntradas = totalEntradasCentavos > 0;
+
+  // Calcula quanto cada pessoa movimentou
+  const balancoPessoasRaw = pessoas.map((p) => {
+    const lancsPessoa = lancamentos.filter((l) => l.pessoaId === p.id);
+    let entradasPessoa = 0;
+    let saidasPessoa = 0;
+    let adiantamentosPessoa = 0;
+
+    lancsPessoa.forEach((l) => {
+      const v = Math.abs(l.valorCentavos || 0);
+      if (l.tipo === 'entrada') {
+        entradasPessoa += v;
+      } else if (l.tipo === 'saida' || l.tipo === 'material') {
+        saidasPessoa += v;
+      } else if (l.tipo === 'adiantamento') {
+        adiantamentosPessoa += v;
+      }
+    });
+
+    // Total que a pessoa colocou ou enviou para o acerto
+    const totalColocado = entradasPessoa + saidasPessoa;
+    return {
+      pessoa: p,
+      entradasPessoa,
+      saidasPessoa,
+      adiantamentosPessoa,
+      totalColocado,
+    };
+  });
+
+  const transacoes: TransacaoResolucao[] = [];
+  let balancoPorPessoa: BalancoPessoaResolucao[] = [];
+
+  // CASO 1: EXATAMENTE DUAS PESSOAS (ex: Regina e Maninho, ou Neto e Victor)
+  // Conta direta: Quem passou dinheiro vs Quem devolveu/gastou
+  if (numPessoas === 2) {
+    const p1 = balancoPessoasRaw[0];
+    const p2 = balancoPessoasRaw[1];
+
+    // Se uma pessoa enviou entradas e a outra enviou saídas/pix (caso clássico de empréstimo/repasse)
+    // Ex: Regina colocou 3.844,45 e Maninho mandou 1.500,00 de volta
+    const diferencaCentavos = Math.abs(p1.totalColocado - p2.totalColocado);
+
+    let devedor = '';
+    let credor = '';
+    let saldoP1 = 0;
+    let saldoP2 = 0;
+
+    if (p1.totalColocado > p2.totalColocado) {
+      // P1 colocou mais dinheiro (credor), P2 pegou mais ou devolveu menos (devedor)
+      devedor = p2.pessoa.nome;
+      credor = p1.pessoa.nome;
+      saldoP1 = diferencaCentavos;
+      saldoP2 = -diferencaCentavos;
+      if (diferencaCentavos > 50) {
+        transacoes.push({
+          id: `trans_direta_1_2`,
+          devedor: p2.pessoa.nome,
+          credor: p1.pessoa.nome,
+          valorCentavos: diferencaCentavos,
+          motivo: `Diferença de repasses: ${p1.pessoa.nome} passou ${formatarCentavos(p1.totalColocado)} e ${p2.pessoa.nome} repassou ${formatarCentavos(p2.totalColocado)}`,
+        });
+      }
+    } else if (p2.totalColocado > p1.totalColocado) {
+      // P2 colocou mais dinheiro (credor), P1 é devedor
+      devedor = p1.pessoa.nome;
+      credor = p2.pessoa.nome;
+      saldoP1 = -diferencaCentavos;
+      saldoP2 = diferencaCentavos;
+      if (diferencaCentavos > 50) {
+        transacoes.push({
+          id: `trans_direta_2_1`,
+          devedor: p1.pessoa.nome,
+          credor: p2.pessoa.nome,
+          valorCentavos: diferencaCentavos,
+          motivo: `Diferença de repasses: ${p2.pessoa.nome} passou ${formatarCentavos(p2.totalColocado)} e ${p1.pessoa.nome} repassou ${formatarCentavos(p1.totalColocado)}`,
+        });
+      }
+    }
+
+    balancoPorPessoa = [
+      {
+        pessoaId: p1.pessoa.id,
+        nome: p1.pessoa.nome,
+        cor: p1.pessoa.cor,
+        gastosPagosCentavos: p1.saidasPessoa,
+        adiantamentosPegosCentavos: p1.adiantamentosPessoa,
+        saldoDiretoCentavos: saldoP1,
+        cotaEntradasCentavos: p1.entradasPessoa,
+        saldoFinalAReceberCentavos: saldoP1,
+        status: saldoP1 > 50 ? 'recebe' : saldoP1 < -50 ? 'paga' : 'quitado',
+        descricaoStatus: saldoP1 > 50 ? `Tem a receber ${formatarCentavos(saldoP1)}` : saldoP1 < -50 ? `Deve pagar ${formatarCentavos(Math.abs(saldoP1))}` : 'Quitado',
+      },
+      {
+        pessoaId: p2.pessoa.id,
+        nome: p2.pessoa.nome,
+        cor: p2.pessoa.cor,
+        gastosPagosCentavos: p2.saidasPessoa,
+        adiantamentosPegosCentavos: p2.adiantamentosPessoa,
+        saldoDiretoCentavos: saldoP2,
+        cotaEntradasCentavos: p2.entradasPessoa,
+        saldoFinalAReceberCentavos: saldoP2,
+        status: saldoP2 > 50 ? 'recebe' : saldoP2 < -50 ? 'paga' : 'quitado',
+        descricaoStatus: saldoP2 > 50 ? `Tem a receber ${formatarCentavos(saldoP2)}` : saldoP2 < -50 ? `Deve pagar ${formatarCentavos(Math.abs(saldoP2))}` : 'Quitado',
+      },
+    ];
+  } else {
+    // CASO GERAL: 1 pessoa (obra com prestador) ou mais de 2 pessoas
+    balancoPorPessoa = balancoPessoasRaw.map((item) => {
+      let saldo = 0;
+      if (item.entradasPessoa > 0) {
+        // Entradas da pessoa menos o que ela já recebeu/gastou
+        saldo = item.totalColocado - item.adiantamentosPessoa;
+      } else {
+        // Gastos pagos do bolso menos adiantamentos pegos
+        saldo = item.saidasPessoa - item.adiantamentosPessoa;
+      }
+
+      let status: 'recebe' | 'paga' | 'quitado' = 'quitado';
+      let descricaoStatus = 'Quitado';
+
+      if (saldo > 50) {
+        status = 'recebe';
+        descricaoStatus = `Tem a receber ${formatarCentavos(saldo)}`;
+      } else if (saldo < -50) {
+        status = 'paga';
+        descricaoStatus = `Deve pagar/acertar ${formatarCentavos(Math.abs(saldo))}`;
+      }
+
+      return {
+        pessoaId: item.pessoa.id,
+        nome: item.pessoa.nome,
+        cor: item.pessoa.cor,
+        gastosPagosCentavos: item.saidasPessoa,
+        adiantamentosPegosCentavos: item.adiantamentosPessoa,
+        saldoDiretoCentavos: saldo,
+        cotaEntradasCentavos: item.entradasPessoa,
+        saldoFinalAReceberCentavos: saldo,
+        status,
+        descricaoStatus,
+      };
+    });
+
+    // Gera transações diretas
+    const quemDeve = balancoPorPessoa.filter((b) => b.saldoFinalAReceberCentavos < -50);
+    const quemRecebe = balancoPorPessoa.filter((b) => b.saldoFinalAReceberCentavos > 50);
+
+    if (quemDeve.length > 0 && quemRecebe.length > 0) {
+      let i = 0, j = 0;
+      let devTemp = quemDeve.map((d) => ({ ...d, rest: Math.abs(d.saldoFinalAReceberCentavos) }));
+      let credTemp = quemRecebe.map((c) => ({ ...c, rest: c.saldoFinalAReceberCentavos }));
+
+      while (i < devTemp.length && j < credTemp.length) {
+        const d = devTemp[i];
+        const c = credTemp[j];
+        const val = Math.min(d.rest, c.rest);
+        if (val > 50) {
+          transacoes.push({
+            id: `trans_${i}_${j}`,
+            devedor: d.nome,
+            credor: c.nome,
+            valorCentavos: val,
+            motivo: `Acerto direto de repasses e despesas`,
+          });
+        }
+        d.rest -= val;
+        c.rest -= val;
+        if (d.rest < 50) i++;
+        if (c.rest < 50) j++;
+      }
+    } else if (quemRecebe.length > 0) {
+      quemRecebe.forEach((c, idx) => {
+        transacoes.push({
+          id: `trans_obra_${idx}`,
+          devedor: 'Caixa / Obra',
+          credor: c.nome,
+          valorCentavos: c.saldoFinalAReceberCentavos,
+          motivo: `Reembolso / Pagamento do saldo a receber`,
+        });
+      });
+    } else if (quemDeve.length > 0) {
+      quemDeve.forEach((d, idx) => {
+        transacoes.push({
+          id: `trans_dev_${idx}`,
+          devedor: d.nome,
+          credor: 'Caixa / Obra',
+          valorCentavos: Math.abs(d.saldoFinalAReceberCentavos),
+          motivo: `Devolução de adiantamento excedente`,
+        });
+      });
+    }
+  }
+
+  // Gera texto para WhatsApp
+  const dataHoje = new Date().toLocaleDateString('pt-BR');
+  let textoWhats = `📋 *ACERTO DE CONTAS: ${acerto.titulo.toUpperCase()}*\n`;
+  textoWhats += `📅 Data: ${dataHoje}\n\n`;
+
+  textoWhats += `💰 *Movimentações Registradas:*\n`;
+  balancoPorPessoa.forEach((b) => {
+    const raw = balancoPessoasRaw.find(p => p.pessoa.id === b.pessoaId);
+    textoWhats += `• *${b.nome}:* ${formatarCentavos(raw?.totalColocado || 0)} movimentados\n`;
+  });
+  textoWhats += `\n`;
+
+  if (transacoes.length > 0) {
+    textoWhats += `🤝 *FECHAMENTO (QUEM DEVE A QUEM):*\n`;
+    transacoes.forEach((t) => {
+      textoWhats += `👉 *${t.devedor}* DEVE PAGAR *${formatarCentavos(t.valorCentavos)}* PARA *${t.credor}*\n`;
+    });
+  } else {
+    textoWhats += `✅ *Contas quitadas e equilibradas!*\n`;
+  }
+
+  if (acerto.observacoes) {
+    textoWhats += `\n📝 *Observações:*\n${acerto.observacoes}\n`;
+  }
+
+  return {
+    totalEntradasCentavos,
+    totalGastosCentavos: totalGastosGeraisCentavos,
+    sobraOuDeficitCentavos,
+    temEntradas,
+    balancoPorPessoa,
+    transacoes,
+    textoWhatsApp: textoWhats.trim(),
+  };
+}
+
