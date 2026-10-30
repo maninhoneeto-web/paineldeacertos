@@ -356,13 +356,13 @@ export const ConferenceModal: React.FC<ConferenceModalProps> = ({
       doc.rect(0, 0, pageWidth, 28, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(14);
-      doc.text('NDS CFTV DIGITAL', 14, 12);
+      doc.setFontSize(13);
+      doc.text((titulo || 'RELATÓRIO CONTÁBIL DE FECHAMENTO').toUpperCase(), 14, 12);
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
       doc.setTextColor(148, 163, 184);
-      doc.text('Relatório Contábil de Fechamento, Tabelas & Cálculos da Foto', 14, 18);
+      doc.text('Relatório Contábil de Fechamento, Tabelas & Cálculos', 14, 18);
       doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, 18, { align: 'right' });
 
       let cursorY = 36;

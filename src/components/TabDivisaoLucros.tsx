@@ -63,25 +63,18 @@ export const TabDivisaoLucros: React.FC<TabDivisaoLucrosProps> = ({
     if (configSalva?.participantes && configSalva.participantes.length > 0) {
       return configSalva.participantes;
     }
-    const pessoaNeto = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('neto'));
-    const pessoaVictor = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('victor'));
-
-    return [
-      {
-        id: pessoaNeto ? pessoaNeto.id : 'socio_neto',
-        pessoaId: pessoaNeto?.id,
-        nome: pessoaNeto ? pessoaNeto.nome : 'Neto',
-        porcentagem: 50,
+    if (acerto.pessoas && acerto.pessoas.length > 0) {
+      const pct = Math.floor(100 / acerto.pessoas.length);
+      const resto = 100 - (pct * acerto.pessoas.length);
+      return acerto.pessoas.map((p, idx) => ({
+        id: 'part_' + p.id,
+        pessoaId: p.id,
+        nome: p.nome,
+        porcentagem: idx === 0 ? pct + resto : pct,
         descontarAdiantamentos: true,
-      },
-      {
-        id: pessoaVictor ? pessoaVictor.id : 'socio_victor',
-        pessoaId: pessoaVictor?.id,
-        nome: pessoaVictor ? pessoaVictor.nome : 'Victor',
-        porcentagem: 50,
-        descontarAdiantamentos: true,
-      },
-    ];
+      }));
+    }
+    return [];
   });
 
   const [observacoes, setObservacoes] = useState<string>(

@@ -330,53 +330,39 @@ export function calcularDivisaoLucros(
     ? Number(((lucroBrutoCentavos / faturamentoProjetoCentavos) * 100).toFixed(1))
     : 0;
 
-  // 5. Configurar sócios padrão: Neto (50%) e Victor (50%) se não configurado
+  // 5. Configurar participantes: distribui igualmente entre as pessoas deste acerto
   let participantesConfig: ParticipanteLucro[] = config?.participantes || [];
-  if (participantesConfig.length === 0) {
-    // Procura pessoas com nomes similares no acerto ou cria os 2 sócios padrão
-    const pessoaNeto = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('neto'));
-    const pessoaVictor = acerto.pessoas.find((p) => p.nome.toLowerCase().includes('victor'));
-
-    participantesConfig = [
-      {
-        id: pessoaNeto ? pessoaNeto.id : 'socio_neto',
-        pessoaId: pessoaNeto?.id,
-        nome: pessoaNeto ? pessoaNeto.nome : 'Neto',
-        porcentagem: 50,
-        descontarAdiantamentos: true,
-      },
-      {
-        id: pessoaVictor ? pessoaVictor.id : 'socio_victor',
-        pessoaId: pessoaVictor?.id,
-        nome: pessoaVictor ? pessoaVictor.nome : 'Victor',
-        porcentagem: 50,
-        descontarAdiantamentos: true,
-      },
-    ];
+  if (participantesConfig.length === 0 && acerto.pessoas && acerto.pessoas.length > 0) {
+    const pct = Math.floor(100 / acerto.pessoas.length);
+    const resto = 100 - (pct * acerto.pessoas.length);
+    participantesConfig = acerto.pessoas.map((p, idx) => ({
+      id: 'part_' + p.id,
+      pessoaId: p.id,
+      nome: p.nome,
+      porcentagem: idx === 0 ? pct + resto : pct,
+      descontarAdiantamentos: true,
+    }));
   }
 
   let totalPorcentagemAlocada = 0;
   const participantesCalculados: ParticipanteLucroCalculado[] = participantesConfig.map((p: ParticipanteLucro) => {
     totalPorcentagemAlocada += p.porcentagem;
 
-    // Cota bruta baseada em 50% (ou na porcentagem do sócio) do Lucro Líquido Real
+    // Cota bruta baseada na porcentagem da pessoa do Lucro Líquido
     const cotaBrutaCentavos = isLucroPositivo
       ? Math.round((lucroLiquidoDistribuivelCentavos * p.porcentagem) / 100)
       : 0;
 
-    // 6. REGRA AUTOMÁTICA DE ADIANTAMENTOS:
-    // Se o sócio for "Neto" (ou qualquer com descontarAdiantamentos = true),
-    // somamos todos os adiantamentos / vales destinados a ele (ex: R$ 601,00 Itatiaia).
-    // Esse desconto é AUTOMÁTICO e EXCLUSIVO dele e NÃO afeta o saldo de Victor ou a Base do projeto.
+    // 6. REGRA DINÂMICA DE ADIANTAMENTOS:
+    // Abate os vales destinados exclusivamente a esta pessoa específica
     let adiantamentosAbatidosCentavos = 0;
     if (p.descontarAdiantamentos !== false) {
-      const pNome = p.nome.toLowerCase().trim();
+      const pNome = (p.nome || '').toLowerCase().trim();
       for (const l of lancamentos) {
         if (l.tipo === 'adiantamento') {
           const lNomePessoa = acerto.pessoas.find((pes) => pes.id === l.pessoaId)?.nome.toLowerCase().trim() || '';
           const matchId = (p.pessoaId && l.pessoaId === p.pessoaId) || l.pessoaId === p.id;
-          const matchNome = (pNome.includes('neto') && (lNomePessoa.includes('neto') || l.descricao.toLowerCase().includes('neto'))) ||
-                            (pNome.includes('victor') && (lNomePessoa.includes('victor') || l.descricao.toLowerCase().includes('victor')));
+          const matchNome = pNome && (lNomePessoa.includes(pNome) || (l.descricao && l.descricao.toLowerCase().includes(pNome)));
           
           if (matchId || matchNome) {
             adiantamentosAbatidosCentavos += Math.abs(l.valorCentavos || 0);

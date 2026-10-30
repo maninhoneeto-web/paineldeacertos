@@ -49,15 +49,15 @@ export async function gerarRelatorioPDF(
   doc.rect(0, 30, pageWidth, 2, 'F');
 
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18);
+  doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text('NDS CFTV DIGITAL', 14, 13);
+  doc.text((acerto.titulo || 'RELATÓRIO DE ACERTO FINANCEIRO').toUpperCase(), 14, 13);
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184); // Slate 400
-  doc.text('SISTEMA AUTOMATIZADO DE FECHAMENTO FINANCEIRO E ACERTO DE PROJETOS', 14, 19);
-  doc.text(`Projeto: ${acerto.titulo.toUpperCase()} | Status: ${acerto.status.toUpperCase()}`, 14, 25);
+  doc.text('FECHAMENTO CONTÁBIL E DISTRIBUIÇÃO FINANCEIRA', 14, 19);
+  doc.text(`Status: ${acerto.status.toUpperCase()} | Pessoas: ${acerto.pessoas.map((p) => p.nome).join(', ') || 'Geral'}`, 14, 25);
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(9);

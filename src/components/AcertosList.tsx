@@ -68,7 +68,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
   const [novoTitulo, setNovoTitulo] = useState('');
   const [novaData, setNovaData] = useState(new Date().toISOString().slice(0, 10));
   const [novasObservacoes, setNovasObservacoes] = useState('');
-  const [novasPessoasTexto, setNovasPessoasTexto] = useState('João, Maria');
+  const [novasPessoasTexto, setNovasPessoasTexto] = useState('');
   const [isCriando, setIsCriando] = useState(false);
 
   // Lista única de nomes de todas as pessoas para filtro
@@ -169,7 +169,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
           dataGeral: new Date().toISOString().slice(0, 10),
           totalEscritoNaAnotacaoCentavos: 0,
           totalEscritoFormatado: '',
-          todasPessoasIdentificadas: ['Neto', 'Victor'],
+          todasPessoasIdentificadas: [],
           linhas: [
             {
               descricao: 'Lançamento do comprovante',
@@ -178,7 +178,7 @@ export const AcertosList: React.FC<AcertosListProps> = ({
               tipoSugerido: 'saida',
               categoria: 'Geral',
               formaPagamento: 'Pix',
-              pessoaSugerida: 'Neto',
+              pessoaSugerida: 'Geral',
               confianca: 'alta',
             },
           ],

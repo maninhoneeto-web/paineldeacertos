@@ -742,111 +742,13 @@ export async function importarBackup(jsonString: string): Promise<{ acertosCount
 // -------------------------------------------------------------
 
 export async function inicializarDadosSeNecessario(): Promise<void> {
-  console.log('%c[DB:Seed] Verificando dados iniciais...', 'color: #64748b;');
+  console.log('%c[DB:Seed] Verificando integridade da base de acertos...', 'color: #64748b;');
   const acertos = await listarAcertos();
 
   if (acertos.length > 0) {
-    console.log(`[DB:Seed] Banco de dados já possui ${acertos.length} acertos existentes.`);
-    // Sanitização de observações legadas com estimativas fixas de texto
-    const cftv = acertos.find((a) => a.id === 'acerto_nds_cftv_digital');
-    if (cftv) {
-      let modificado = false;
-      if (cftv.observacoes?.includes('Faturamento R$ 9.000,00')) {
-        cftv.observacoes = 'Fechamento financeiro NDS CFTV Digital';
-        modificado = true;
-      }
-      if (cftv.configDivisaoLucros?.faturamentoProjetoCentavos === 900000 || cftv.configDivisaoLucros?.usarPrecoFixo) {
-        cftv.configDivisaoLucros.usarPrecoFixo = false;
-        cftv.configDivisaoLucros.faturamentoProjetoCentavos = 0;
-        cftv.configDivisaoLucros.taxaProjetoCentavos = 0;
-        modificado = true;
-      }
-      if (modificado) {
-        await salvarAcerto(cftv);
-        console.log('[DB:Seed] Acerto legado sanitizado para modo dinâmico.');
-      }
-    }
+    console.log(`[DB:Seed] Banco de dados pronto com ${acertos.length} acertos existentes.`);
     return;
   }
 
-  console.log('%c[DB:Seed] Criando primeiro acerto de demonstração NDS CFTV Digital...', 'color: #059669; font-weight: bold;');
-  const hoje = new Date().toISOString().slice(0, 10);
-  const acertoId = 'acerto_nds_cftv_digital';
-
-  const demoAcerto: Acerto = {
-    id: acertoId,
-    titulo: 'NDS CFTV Digital - Fechamento & Divisão de Lucros',
-    dataInicio: hoje,
-    status: 'aberto',
-    observacoes: 'Fechamento financeiro NDS CFTV Digital',
-    pessoas: [
-      { id: 'p_neto', nome: 'Neto', papel: 'Sócio', cor: '#059669', ordem: 0 },
-      { id: 'p_victor', nome: 'Victor', papel: 'Sócio', cor: '#0284c7', ordem: 1 },
-    ],
-    categorias: [
-      'Mão de Obra',
-      'Material de Construção',
-      'Adiantamento/Val',
-      'Alimentação',
-      'Combustível',
-      'Ferramentas',
-      'Transporte',
-      'Outros',
-    ],
-    configDivisaoLucros: {
-      usarPrecoFixo: false,
-      faturamentoProjetoCentavos: 0,
-      taxaProjetoCentavos: 0,
-      reservaEmergenciaPorcentagem: 0,
-      participantes: [
-        { id: 'part_neto', pessoaId: 'p_neto', nome: 'Neto', porcentagem: 50, descontarAdiantamentos: true },
-        { id: 'part_victor', pessoaId: 'p_victor', nome: 'Victor', porcentagem: 50, descontarAdiantamentos: true },
-      ],
-      observacoes: '',
-    },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await salvarAcerto(demoAcerto);
-
-  const lancamentosIniciais: Lancamento[] = [
-    {
-      id: 'lanc_cftv_materiais',
-      acertoId,
-      pessoaId: 'p_neto',
-      tipo: 'saida',
-      data: hoje,
-      descricao: 'Cabos UTP, conectores BNC e baluns para CFTV',
-      valorCentavos: 45000, // R$ 450,00
-      categoria: 'Material de Construção',
-      formaPagamento: 'Pix',
-      quemPagou: 'Neto',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: 'lanc_vale_neto_601',
-      acertoId,
-      pessoaId: 'p_neto',
-      tipo: 'adiantamento',
-      data: hoje,
-      descricao: 'Adiantamento/Val (Itatiaia)',
-      valorCentavos: 60100, // R$ 601,00
-      categoria: 'Adiantamento/Val',
-      observacaoAdiantamento: 'Adiantamento pessoal debitado exclusivamente do saldo a receber do Neto. Não diminui a base de cálculo nem afeta o valor do Victor.',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
-
-  await salvarMultiplosLancamentos(lancamentosIniciais);
-
-  await registrarHistorico({
-    acertoId,
-    acao: 'criacao',
-    tipoItem: 'acerto',
-    detalhes: 'Fechamento financeiro NDS CFTV Digital inicializado com sucesso.',
-  });
-  console.log('%c[DB:Seed:Concluído] Dados iniciais carregados e protegidos com persistência dupla.', 'color: #059669; font-weight: bold;');
+  console.log('%c[DB:Seed] Banco de dados pronto para criação de novos acertos.', 'color: #059669; font-weight: bold;');
 }
