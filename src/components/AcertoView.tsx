@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Plus, Camera, FileText, ShieldCheck, Database, Settings, 
-  Trash2, Edit2, Check, X, Tag, MoreHorizontal, ArrowRightLeft, Sparkles, AlertTriangle, Percent
+  Trash2, Edit2, Check, X, Tag, MoreHorizontal, ArrowRightLeft, Sparkles, AlertTriangle, Percent, Table as TableIcon
 } from 'lucide-react';
 import { 
   Acerto, Lancamento, ImagemComprovante, HistoricoItem, PessoaTab, 
   TipoLancamento, LinhaConferenciaOCR, ResultadoOCR, ConfigDivisaoLucros 
 } from '../types';
 import { TabGeral } from './TabGeral';
+import { TabPlanilhaEditavel } from './TabPlanilhaEditavel';
 import { TabPessoa } from './TabPessoa';
 import { TabDivisaoLucros } from './TabDivisaoLucros';
 import { ConferenceModal } from './ConferenceModal';
@@ -698,6 +699,19 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             <span>GERAL</span>
           </button>
 
+          {/* Aba PLANILHA EDITÁVEL */}
+          <button
+            onClick={() => handleTrocarAba('planilha')}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
+              abaAtiva === 'planilha'
+                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
+            }`}
+          >
+            <TableIcon className="w-3.5 h-3.5 text-emerald-500" />
+            <span>PLANILHA</span>
+          </button>
+
           {/* Aba DIVISÃO DE LUCROS */}
           <button
             onClick={() => handleTrocarAba('divisao_lucros')}
@@ -759,6 +773,27 @@ export const AcertoView: React.FC<AcertoViewProps> = ({
             onSelecionarPessoa={(id) => handleTrocarAba(id)}
             onNovaPessoa={() => setModalNovaPessoa(true)}
             onUploadImagem={handleUploadImagens}
+            onAbrirPlanilha={() => handleTrocarAba('planilha')}
+            isEnviandoImagem={isProcessandoImagem}
+          />
+        ) : abaAtiva === 'planilha' ? (
+          <TabPlanilhaEditavel
+            acerto={acerto}
+            lancamentos={lancamentos}
+            onSalvarLancamento={handleSalvarLancamento}
+            onExcluirLancamento={handleExcluirLancamento}
+            onDuplicarLancamento={handleDuplicarLancamento}
+            onMoverLancamento={handleMoverLancamento}
+            onNovoLancamento={(tipo) => {
+              setTipoPreSelecionado(tipo || 'saida');
+              setLancamentoEmEdicao(null);
+              setModalLancamentoAberto(true);
+            }}
+            onUploadImagem={handleUploadImagens}
+            onGerarPdf={() => {
+              setPdfPessoaIdFoco(undefined);
+              setModalPdfAberto(true);
+            }}
             isEnviandoImagem={isProcessandoImagem}
           />
         ) : abaAtiva === 'divisao_lucros' ? (

@@ -13,6 +13,7 @@ interface TabGeralProps {
   onSelecionarPessoa: (pessoaId: string) => void;
   onNovaPessoa: () => void;
   onUploadImagem?: (files: FileList | null) => void;
+  onAbrirPlanilha?: () => void;
   isEnviandoImagem?: boolean;
 }
 
@@ -22,6 +23,7 @@ export const TabGeral: React.FC<TabGeralProps> = ({
   onSelecionarPessoa,
   onNovaPessoa,
   onUploadImagem,
+  onAbrirPlanilha,
   isEnviandoImagem = false,
 }) => {
   const totaisGerais = calcularTotaisGerais(acerto.pessoas, lancamentos);
@@ -78,10 +80,19 @@ export const TabGeral: React.FC<TabGeralProps> = ({
                 : 'Visão geral dinâmica de entradas, saídas e saldos consolidados.'}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
+              {onAbrirPlanilha && (
+                <button
+                  onClick={onAbrirPlanilha}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 text-xs font-bold shadow-md transition cursor-pointer active:scale-95"
+                >
+                  <TableIcon className="w-4 h-4 text-emerald-700" />
+                  <span>📊 Abrir Planilha Editável</span>
+                </button>
+              )}
               {onUploadImagem && (
-                <label className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 text-xs font-bold shadow-md transition cursor-pointer active:scale-95">
-                  <Camera className="w-4 h-4 text-emerald-700" />
-                  <span>{isEnviandoImagem ? 'Processando Foto...' : '📷 Enviar Foto do Caderno / Acerto'}</span>
+                <label className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-800/80 hover:bg-emerald-800 text-white text-xs font-bold border border-emerald-500/40 shadow-md transition cursor-pointer active:scale-95">
+                  <Camera className="w-4 h-4 text-emerald-300" />
+                  <span>{isEnviandoImagem ? 'Processando Foto...' : '📷 Enviar Foto do Caderno'}</span>
                   <input
                     type="file"
                     accept="image/*"
